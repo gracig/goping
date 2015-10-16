@@ -8,7 +8,7 @@ import (
 	"github.com/gersongraciani/ggping"
 )
 
-const repeatGroup int = 500
+const repeatGroup int = 1
 const maxWorkers int = 35
 
 //2015/10/15 00:15:05 Ping Unmatched Response: PING farts.com (184.168.164.84) 100(128) bytes of data.
@@ -20,12 +20,14 @@ const maxWorkers int = 35
 
 func main() {
 	requests := []*ggping.PingRequest{
-		{HostDest: "www.cnn.com", Tos: 16, Timeout: 1, MaxPings: 10, MinWait: 0.1, Percentil: 90, UserMap: map[string]string{"company": "cnn"}},
-		{HostDest: "www.microsoft.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "microsoft"}},
-		{HostDest: "www.dell.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "dell"}},
-		{HostDest: "www.nytimes.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "nytimes"}},
-		{HostDest: "www.avaya.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "avaya"}},
-		{HostDest: "www.google.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "google"}},
+//		{HostDest: "www.cnn.com", Tos: 16, Timeout: 1, MaxPings: 10, MinWait: 0.1, Percentil: 90, UserMap: map[string]string{"company": "cnn"}},
+//		{HostDest: "www.microsoft.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "microsoft"}},
+//		{HostDest: "www.dell.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "dell"}},
+//		{HostDest: "www.nytimes.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "nytimes"}},
+//		{HostDest: "www.avaya.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "avaya"}},
+		{HostDest: "www.google.com", Timeout: 1, MaxPings: 10, MinWait: 0, Percentil: 90, UserMap: map[string]string{"company": "google"}},
+		{HostDest: "localhost", Timeout: 1, MaxPings: 10, MinWait: 0.0, Percentil: 90, UserMap: map[string]string{"company": "local"}},
+		{HostDest: "UnknownHost", Timeout: 1, MaxPings: 10, MinWait: 0.5, Percentil: 90, UserMap: map[string]string{"company": "nocompany"}},
 	}
 
 	var wg sync.WaitGroup
@@ -33,9 +35,13 @@ func main() {
 	done := make(chan *ggping.PingTask) //Creates the done channel to receive PingTasks as it arrives
 	go func() {
 		for task := range done {
-			debug.Printf("\n\n%v %v", task.Request, task.Summary)
+			if task.Error != nil{
+				debug.Printf("Request Error: %v %v", task.Request, task.Error)
+			}else{
+				debug.Printf("Request OK: %v %v", task.Request, task.Summary)
+			}
 			for _, v := range task.Responses {
-				debug.Printf("[%v]", v)
+				debug.Printf("\tResponse: [%v]", v)
 			}
 			wg.Done()
 		}
@@ -46,7 +52,7 @@ func main() {
 	for i := 0; i < repeatGroup; i++ {
 		for j, request := range requests {
 			repeatedRequests = append(repeatedRequests, request)
-			repeatedRequests[i].UserMap["request"] = fmt.Sprintf("%v", i+j)
+			repeatedRequests[2*i+j].UserMap["request"] = fmt.Sprintf("%v",2*i+j)
 		}
 	}
 	debug.Printf("Requests: %v, Workers: %v", len(repeatedRequests), maxWorkers)

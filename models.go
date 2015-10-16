@@ -18,7 +18,7 @@ type PingRequest struct {
 	Payload   float64           //Timeout in seconds
 	Tos       uint              //Timeout in seconds
 	MaxPings  int               //Max Number of pings that this request should do
-	MinWait   float64           //THe minimum in seconds time a ping should wait before do another ping
+	MinWait   float64           //The minimum in seconds time a ping should wait before do another ping
 	UserMap   map[string]string //Store user defined metrics
 	Percentil int               //Percentil to be used in the Summary session
 }

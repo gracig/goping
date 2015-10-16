@@ -66,9 +66,7 @@ func StartPing(done chan *PingTask, requests []*PingRequest, maxWorkers int) err
 		for pingTask := range wait {
 			debug.Printf("Sleeping t%v %v\n", i, pingTask.Request)
 			//Sleep till the MinWait is reached for this Request type
-			//pingTask.mutex.Lock()
-			time.Sleep((time.Duration(pingTask.Request.MinWait) * time.Second) - pingTask.timeSinceLastResponse())
-			//pingTask.mutex.Unlock()
+			time.Sleep((time.Duration(pingTask.Request.MinWait*1000) * time.Millisecond) - pingTask.timeSinceLastResponse())
 
 			debug.Printf("Sending after wakeup t%v %v\n", i, pingTask.Request)
 			ping <- pingTask //Sends the pingTask back to the ping channel
@@ -124,14 +122,11 @@ func StartPing(done chan *PingTask, requests []*PingRequest, maxWorkers int) err
 		if request.Tos == 0 {
 			request.Tos = 0
 		}
-		if request.MinWait == 0 {
-			request.MinWait = 1
-		}
 		pingTask := &PingTask{Request: request, Responses: make([]*PingResponse, 0, request.MaxPings)}
 		ip, err := net.ResolveIPAddr("ip4", request.HostDest)
 		if err != nil {
-			pingTask.Error = err
-			done <- pingTask //Sends the job to the "done" channel
+			pingTask.Error = fmt.Errorf("Could not resolve Ip address for: %v",request.HostDest)
+			done <- pingTask //Sends the job back to the "done" channel and avoid uncessary pings
 			continue
 		}
 		request.IP = ip

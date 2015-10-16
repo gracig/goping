@@ -7,7 +7,7 @@ func TestProcessSummary(t *testing.T) {
 		//Create a new task: testTask with the request and responses from the testTable
 		testTask := PingTask{Request: tableTask.Request, Responses: tableTask.Responses}
 		//We will analyze the summary results after call ProcessSummary on the new created task
-		ProcessSummary(&testTask)
+		processSummary(&testTask)
 
 		if testTask.Summary.PingsSent != tableTask.Summary.PingsSent {
 			t.Error(i, "PingsSent Expected", tableTask.Summary.PingsSent, "got", testTask.Summary.PingsSent)
@@ -51,7 +51,7 @@ func TestProcessSummary(t *testing.T) {
 //Various aspects of the logic will be tested using those
 var testTable = []PingTask{
 	{
-		Request: PingRequest{
+		Request: &PingRequest{
 			HostDest:  "www.google.com",
 			Timeout:   3,
 			MaxPings:  10,
@@ -62,7 +62,7 @@ var testTable = []PingTask{
 				"key":    "value",
 			},
 		},
-		Responses: []PingResponse{
+		Responses: []*PingResponse{
 			{Rtt: 80, Error: nil},
 			{Rtt: 20, Error: nil},
 			{Rtt: 103, Error: nil},
@@ -74,7 +74,7 @@ var testTable = []PingTask{
 			{Rtt: 10, Error: nil},
 			{Rtt: 15, Error: nil},
 		},
-		Summary: PingSummary{
+		Summary: &PingSummary{
 			PingsSent:     int(10),
 			PingsReceived: int(10),
 			PacketLoss:    float64(0),
