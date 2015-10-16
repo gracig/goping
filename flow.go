@@ -39,18 +39,18 @@ func StartPing(done chan *PingTask, requests []*PingRequest, maxWorkers int) err
 	var pingWorker = func(i int) {
 		for pingTask := range ping {
 			debug.Printf("Start Ping t%v %v\n", i, pingTask.Request)
-			ProcessPing(pingTask)
+			processPing(pingTask)
 			pong <- pingTask //Send PingTask to pong channel
 		}
 	}
 	//Reads from the pong channel, call function that processes the ping response.
-	//The ProcessPong returns if the request has all the responses.
+	//The processSummary returns if the request has all the responses.
 	//If all responses arrived then send to the summary channel.
 	//Else send to the wait channel
 	var pongWorker = func(i int) {
 		for pingTask := range pong {
 			debug.Printf("Start Pong t%v %v\n", i, pingTask.Request)
-			if ProcessPong(pingTask) {
+			if processPong(pingTask) {
 				summary <- pingTask //Sends the pingTask to the summary channel
 			} else {
 				wait <- pingTask
@@ -77,12 +77,12 @@ func StartPing(done chan *PingTask, requests []*PingRequest, maxWorkers int) err
 	}
 
 	//Reads from the summary channel.
-	//Call the function ProcessSummary to summarize all responses in a PingSummary Object and attach it to the Task
+	//Call the function processSummary to summarize all responses in a PingSummary Object and attach it to the Task
 	//Send the Task to the done channel. The done channel was received as a parameter and is controlled by the caller
 	var summaryWorker = func(i int) {
 		for pingTask := range summary {
 			debug.Printf("Start Summary t%v %v\n", i, pingTask.Request)
-			ProcessSummary(pingTask) //Summarizes all the responses inside the pingTask
+			processSummary(pingTask) //Summarizes all the responses inside the pingTask
 			done <- pingTask         //Sends the job to the "done" channel
 			wg.Done()                //Decrement wait group
 		}
@@ -113,7 +113,7 @@ func StartPing(done chan *PingTask, requests []*PingRequest, maxWorkers int) err
 	//Inside the PingTask object, the Responses slice was allocate with the request MaxPings parameter with length 0
 	//The pong worker should then append responses to that as soon as it reads it from the pong channel
 	for i, request := range requests {
-		request.Number = uint(i)
+		request.Number = i
 		//Paramater Defaults
 		if request.Payload == 0 {
 			request.Payload = 100

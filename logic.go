@@ -7,8 +7,10 @@ import (
 	"sort"
 )
 
-//Start the ping
-func ProcessPing(task *PingTask) {
+//Start process the ping
+//Pingers should be implemented in the pingers.go (Just for convetion) and they should implement the interface Pinger
+//First tests were made with ping command, but the performance was too bad. Maybe because each ping spawn a unix child process of the ping program. But it was too slow.
+func processPing(task *PingTask) {
 	task.Responses = append(task.Responses, &PingResponse{})           //appends a new response object to task
 	var response *PingResponse = task.Responses[len(task.Responses)-1] //assigns a reference to the last created response to response
 
@@ -31,7 +33,7 @@ func ProcessPing(task *PingTask) {
 }
 
 //Process response and reeturn bool if all responses were received
-func ProcessPong(task *PingTask) bool {
+func processPong(task *PingTask) bool {
 	if len(task.Responses) >= task.Request.MaxPings {
 		return true
 	}
@@ -39,7 +41,7 @@ func ProcessPong(task *PingTask) bool {
 }
 
 //This function is responsible to summarize all the responses from a PingTask
-func ProcessSummary(task *PingTask) {
+func processSummary(task *PingTask) {
 
 	task.Summary = &PingSummary{}           //Creates a PingSummary object
 	var summary *PingSummary = task.Summary //References the taskSummary to summary

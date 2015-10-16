@@ -12,7 +12,7 @@ import (
 //Later we would implement other pings. The final solution would be a Go Pinger with no dependencies
 type PingRequest struct {
 	IP        *net.IPAddr       //Converted IP Address of HostDest
-	Number    uint              // The Number of this request.
+	Number    int               // The Number of this request.
 	HostDest  string            //FQDN or IP of the host to be pinged
 	Timeout   float64           //Timeout in seconds
 	Payload   float64           //Timeout in seconds
@@ -24,9 +24,10 @@ type PingRequest struct {
 }
 
 type PingResponse struct {
-	Rtt   float64   //Saves the round trip time from the ping in ms. should be 0 in case of error
-	Error error     //nil if the ping succeeded, An error string otherwise
-	When  time.Time //Time when the ping was received
+	Rtt   float64    //Saves the round trip time from the ping in ms. should be 0 in case of error
+	Error error      //nil if the ping succeeded, An error string otherwise
+	When  time.Time  //Time when the ping was received
+	mutex sync.Mutex //Control race conditions
 }
 
 type PingSummary struct {

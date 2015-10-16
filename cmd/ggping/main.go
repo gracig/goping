@@ -8,8 +8,8 @@ import (
 	"github.com/gersongraciani/ggping"
 )
 
-const repeatGroup int = 1
-const maxWorkers int = 100
+const repeatGroup int = 500
+const maxWorkers int = 35
 
 //2015/10/15 00:15:05 Ping Unmatched Response: PING farts.com (184.168.164.84) 100(128) bytes of data.
 //2015/10/15 00:15:05 Ping Unmatched Response: PING e10088.dspb.akamaiedge.net (23.213.202.147) 100(128) bytes of data.
@@ -20,8 +20,7 @@ const maxWorkers int = 100
 
 func main() {
 	requests := []*ggping.PingRequest{
-		//````		{HostDest: "www.cnn.com", Tos: 16, Timeout: 1, MaxPings: 10, MinWait: 0.1, Percentil: 90, UserMap: map[string]string{"company": "cnn"}},
-		{HostDest: "www.farts.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "farts"}},
+		{HostDest: "www.cnn.com", Tos: 16, Timeout: 1, MaxPings: 10, MinWait: 0.1, Percentil: 90, UserMap: map[string]string{"company": "cnn"}},
 		{HostDest: "www.microsoft.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "microsoft"}},
 		{HostDest: "www.dell.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "dell"}},
 		{HostDest: "www.nytimes.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "nytimes"}},
