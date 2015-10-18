@@ -26,7 +26,7 @@ func (p GoPinger) Ping(request *PingRequest, response *PingResponse, seq int) {
 	//Tag the time on response before the ping command, to avoid wait more time
 	response.When = time.Now()
 
-	var dst *net.IPAddr = request.IP
+	var dst *net.IPAddr = request.ip
 
 	//Calling function to open Socket Connection on raw ip4:icmp
 	PacketConn, err := icmp.ListenPacket("ip4:icmp", "0.0.0.0")
@@ -50,7 +50,7 @@ func (p GoPinger) Ping(request *PingRequest, response *PingResponse, seq int) {
 			rt := time.Since(response.When)                   //Set the time the message arrived, will be used in Rtt in case of match
 
 			if err != nil {
-				debug.Printf("Connection Closed for Id: %v, Seq: %v", request.Number, seq)
+				debug.Printf("Connection Closed for Id: %v, Seq: %v", request.number, seq)
 				return //Exit the loop in case of socket read error
 			}
 			message, err := icmp.ParseMessage(icmpProtocol, rb[:sizeInBytes]) //Uses google code to parse the icmp Message
@@ -59,10 +59,10 @@ func (p GoPinger) Ping(request *PingRequest, response *PingResponse, seq int) {
 			}
 			if message.Type == ipv4.ICMPTypeEchoReply { //Message should be of type ICMPTypeEchoReply
 				var body *icmp.Echo = message.Body.(*icmp.Echo)   //Type Assertion for icmp.Echo
-				if body.ID == request.Number && body.Seq == seq { //Comparing Id and Seq from request with received message
+				if body.ID == request.number && body.Seq == seq { //Comparing Id and Seq from request with received message
 					//Found Reply, marking rtt type and returning
 					response.Rtt = rt.Seconds() * float64(time.Second/time.Millisecond)
-					debug.Printf("ECHO REPLY FROM IP: %v BYTES: %v Id: %v, Seq: %v, RTT: %v", peer, sizeInBytes, request.Number, seq, response.Rtt)
+					debug.Printf("ECHO REPLY FROM IP: %v BYTES: %v Id: %v, Seq: %v, RTT: %v", peer, sizeInBytes, request.number, seq, response.Rtt)
 					icmpReceived <- true //Communicates that the icmp was received before return
 					return
 				}
@@ -70,12 +70,12 @@ func (p GoPinger) Ping(request *PingRequest, response *PingResponse, seq int) {
 		}
 	}()
 
-	debug.Printf("Host Destination Ip: %v\n", request.IP)
+	debug.Printf("Host Destination Ip: %v\n", request.ip)
 
 	wm := icmp.Message{
 		Type: ipv4.ICMPTypeEcho, Code: 0,
 		Body: &icmp.Echo{
-			ID: request.Number, Seq: seq,
+			ID: request.number, Seq: seq,
 			Data: []byte("HELLO-R-U-THERE####All ALL OTHER STUFF!"),
 		},
 	}
@@ -132,7 +132,7 @@ func (p LinuxPinger) Ping(request *PingRequest, response *PingResponse, seq int)
 		fmt.Sprintf("%v", request.Payload),
 		"-Q",
 		fmt.Sprintf("%v", request.Tos),
-		request.HostDest,
+		request.To,
 	)
 	cmdOutput := &bytes.Buffer{}
 	cmd.Stdout = cmdOutput

@@ -1,15 +1,13 @@
 package main
 
 import (
-	"fmt"
-	"sync"
 	"time"
 
 	"github.com/gersongraciani/ggping"
 )
 
-const repeatGroup int = 1
-const maxWorkers int = 35
+const repeatGroup int = 100
+const maxWorkers int = 100
 
 //2015/10/15 00:15:05 Ping Unmatched Response: PING farts.com (184.168.164.84) 100(128) bytes of data.
 //2015/10/15 00:15:05 Ping Unmatched Response: PING e10088.dspb.akamaiedge.net (23.213.202.147) 100(128) bytes of data.
@@ -20,45 +18,42 @@ const maxWorkers int = 35
 
 func main() {
 	requests := []*ggping.PingRequest{
-//		{HostDest: "www.cnn.com", Tos: 16, Timeout: 1, MaxPings: 10, MinWait: 0.1, Percentil: 90, UserMap: map[string]string{"company": "cnn"}},
-//		{HostDest: "www.microsoft.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "microsoft"}},
-//		{HostDest: "www.dell.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "dell"}},
-//		{HostDest: "www.nytimes.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "nytimes"}},
-//		{HostDest: "www.avaya.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "avaya"}},
-		{HostDest: "www.google.com", Timeout: 1, MaxPings: 10, MinWait: 0, Percentil: 90, UserMap: map[string]string{"company": "google"}},
-		{HostDest: "localhost", Timeout: 1, MaxPings: 10, MinWait: 0.0, Percentil: 90, UserMap: map[string]string{"company": "local"}},
-		{HostDest: "UnknownHost", Timeout: 1, MaxPings: 10, MinWait: 0.5, Percentil: 90, UserMap: map[string]string{"company": "nocompany"}},
+		//		{To: "www.cnn.com", Tos: 16, Timeout: 1, MaxPings: 10, MinWait: 0.1, Percentil: 90, UserMap: map[string]string{"company": "cnn"}},
+		//		{To: "www.microsoft.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "microsoft"}},
+		//		{To: "www.dell.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "dell"}},
+		//		{To: "www.nytimes.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "nytimes"}},
+		//		{To: "www.avaya.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "avaya"}},
+		//		{To: "www.google.com", Timeout: 1, MaxPings: 10, MinWait: 0.5, Percentil: 90, UserMap: map[string]string{"company": "google"}},
+		{To: "localhost", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "local"}},
+		//		{To: "UnknownHost", Timeout: 1, MaxPings: 10, MinWait: 0, Percentil: 90, UserMap: map[string]string{"company": "nocompany"}},
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(len(requests) * repeatGroup)
-	done := make(chan *ggping.PingTask) //Creates the done channel to receive PingTasks as it arrives
+	startTime := time.Now()
+	//pongs := make([]*ggping.Pong, 0, repeatGroup*len(requests))
+	pongs := make(chan *ggping.Pong)
 	go func() {
-		for task := range done {
-			if task.Error != nil{
-				debug.Printf("Request Error: %v %v", task.Request, task.Error)
-			}else{
-				debug.Printf("Request OK: %v %v", task.Request, task.Summary)
+		defer close(pongs)
+		for i := 0; i < repeatGroup; i++ {
+			for _, request := range requests {
+				pongs <- ggping.Ping(*&request)
 			}
-			for _, v := range task.Responses {
-				debug.Printf("\tResponse: [%v]", v)
-			}
-			wg.Done()
 		}
 	}()
-	startTime := time.Now()
-
-	repeatedRequests := make([]*ggping.PingRequest, 0, len(requests)*repeatGroup)
-	for i := 0; i < repeatGroup; i++ {
-		for j, request := range requests {
-			repeatedRequests = append(repeatedRequests, request)
-			repeatedRequests[2*i+j].UserMap["request"] = fmt.Sprintf("%v",2*i+j)
+	var pongsCount int
+	for pong := range pongs {
+		pongsCount++
+		debug.Printf("Startint reading pongs %v", pong.Request)
+		<-pong.Done
+		if pong.Error != nil {
+			debug.Printf("Request Error: %v %v", pong.Request, pong.Error)
+			continue
+		} else {
+			debug.Printf("Request OK: %v %v", pong.Request, pong.Summary)
+		}
+		for _, v := range pong.Responses {
+			debug.Printf("\tResponse: [%v]", v)
 		}
 	}
-	debug.Printf("Requests: %v, Workers: %v", len(repeatedRequests), maxWorkers)
-	ggping.StartPing(done, repeatedRequests, maxWorkers)
 
-	close(done) //Closes the done channel
-	wg.Wait()
-	debug.Printf("End of Program, elapsed time: %v workers:%v requests:%v", time.Since(startTime), maxWorkers, len(repeatedRequests))
+	debug.Printf("End of Program, elapsed time: %v workers:%v requests:%v", time.Since(startTime), maxWorkers, pongsCount)
 }

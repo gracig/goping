@@ -52,7 +52,7 @@ func TestProcessSummary(t *testing.T) {
 var testTable = []PingTask{
 	{
 		Request: &PingRequest{
-			HostDest:  "www.google.com",
+			To:        "www.google.com",
 			Timeout:   3,
 			MaxPings:  10,
 			MinWait:   2,
