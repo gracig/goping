@@ -91,6 +91,13 @@ func coordinator(ping chan Ping, pongBuffer int) {
 			seq++
 			pi.Seq = seq
 
+			//Initializes the channel to receive the Pong
+			pi.pongchan = make(chan *rawIcmp, 2)
+
+			//Registers the seq and the channel in the ping map
+
+			pingmap[seq] = pi.pongchan
+
 			//Send the ping message. On error return the ping to EchoChannel if istantiated
 			if err := sendMessage(&pi, p); err != nil {
 				pi.Pong = Pong{Err: err}
@@ -106,18 +113,12 @@ func coordinator(ping chan Ping, pongBuffer int) {
 				break //next select
 			}
 
-			//Initializes the channel to receive the Pong
-			pi.pongchan = make(chan *rawIcmp, 2)
-
-			//Registers the seq and the channel in the ping map
-			pingmap[seq] = pi.pongchan
-
 			go func(pi *Ping) {
 				select {
 				case ri := <-pi.pongchan:
 					pi.Pong = Pong{Rtt: float64(pi.When.Sub(ri.when)) / float64(time.Millisecond)}
-					//case <-time.After(time.Second * time.Duration(pi.Timeout)):
-					//	pi.Pong = Pong{Err: fmt.Errorf("Request Timeout after %v seconds", pi.Timeout)}
+				case <-time.After(time.Second * time.Duration(pi.Timeout)):
+					pi.Pong = Pong{Err: fmt.Errorf("Request Timeout after %v seconds", pi.Timeout)}
 				}
 				if pi.EchoChannel != nil {
 					pi.EchoChannel <- pi
