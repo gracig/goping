@@ -2,19 +2,19 @@ package ggping
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
+//	"os"
+//	"os/exec"
 	"testing"
-	"time"
+//	"time"
 
-	"golang.org/x/net/icmp"
-	"golang.org/x/net/ipv4"
+//	"golang.org/x/net/icmp"
+//	"golang.org/x/net/ipv4"
 )
 
 func TestCoordinator(t *testing.T) {
 	ping := make(chan Ping)
-	pings := 3
-	echochannel := make(chan *Ping, pings)
+	pings := 20
+	echochannel := make(chan *Ping, pings*3)
 
 	go coordinator(ping, 2048)
 
@@ -30,6 +30,7 @@ func TestCoordinator(t *testing.T) {
 	close(echochannel)
 
 }
+/*
 func TestReceiver(t *testing.T) {
 	fmt.Println("Starting Logger")
 	messages := make(chan *rawIcmp, 100)
@@ -74,3 +75,4 @@ LOOP:
 		t.Errorf("Number of messages expteced were 10, received %v", mc)
 	}
 }
+*/

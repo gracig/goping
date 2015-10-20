@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"time"
+	"bytes"
+	"encoding/binary"
 
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
@@ -28,7 +30,7 @@ type Pong struct {
 	Err error
 }
 
-func runListener(handleRawIcmp func(ri *rawIcmp)) {
+func runListener(handleRawIcmp func(ri *rawIcmp),isready chan bool) {
 	//Creates the connection to send and receive packets
 	c, err := net.ListenPacket("ip4:1", "0.0.0.0")
 	if err != nil {
@@ -39,7 +41,8 @@ func runListener(handleRawIcmp func(ri *rawIcmp)) {
 	if err := p.SetControlMessage(ipv4.FlagTTL|ipv4.FlagSrc|ipv4.FlagDst|ipv4.FlagInterface, true); err != nil {
 		log.Fatal(err)
 	}
-
+	isready<-true
+	close(isready)
 	for {
 		//Reads an ICMP Message from the Socket.
 		ri := rawIcmp{bytes: make([]byte, 1500)}
@@ -79,7 +82,9 @@ func coordinator(ping chan Ping, pongBuffer int) {
 	}
 
 	//Starts the icmp Listener in a goroutine
-	go runListener(icmpRecvHandler)
+	isready := make(chan bool)
+	go runListener(icmpRecvHandler,isready)
+	<-isready
 
 	//Creates a map to match requests with a channel to send response
 	var pingmap = make(map[int]chan *rawIcmp)
@@ -87,19 +92,21 @@ func coordinator(ping chan Ping, pongBuffer int) {
 	for {
 		select {
 		case pi := <-ping:
+			fmt.Println("Received Ping\n")
 			//Increment the sequence number and assigns to pi.Seq
 			seq++
 			pi.Seq = seq
-
-			//Initializes the channel to receive the Pong
-			pi.pongchan = make(chan *rawIcmp, 2)
+		//Initializes the channel to receive the Pong
+			pi.pongchan = make(chan *rawIcmp,1)
 
 			//Registers the seq and the channel in the ping map
+			fmt.Println("Saving Map",pi.Seq)
+			pingmap[pi.Seq] = pi.pongchan
 
-			pingmap[seq] = pi.pongchan
 
 			//Send the ping message. On error return the ping to EchoChannel if istantiated
 			if err := sendMessage(&pi, p); err != nil {
+				fmt.Printf("Could not send ping %v [%v]\n", pi, err)
 				pi.Pong = Pong{Err: err}
 				if pi.EchoChannel != nil {
 					//Return the ping to the EchoChannel
@@ -107,23 +114,12 @@ func coordinator(ping chan Ping, pongBuffer int) {
 						pi.EchoChannel <- pi
 					}(&pi)
 				} else {
-					log.Printf("Could not send ping %v [%v]\n", pi, err)
+					fmt.Printf("Could not send ping %v [%v]\n", pi, err)
 				}
 
 				break //next select
 			}
-
-			go func(pi *Ping) {
-				select {
-				case ri := <-pi.pongchan:
-					pi.Pong = Pong{Rtt: float64(pi.When.Sub(ri.when)) / float64(time.Millisecond)}
-				case <-time.After(time.Second * time.Duration(pi.Timeout)):
-					pi.Pong = Pong{Err: fmt.Errorf("Request Timeout after %v seconds", pi.Timeout)}
-				}
-				if pi.EchoChannel != nil {
-					pi.EchoChannel <- pi
-				}
-			}(&pi)
+				go waitPoing(&pi)
 
 		case ri := <-pong:
 
@@ -139,6 +135,7 @@ func coordinator(ping chan Ping, pongBuffer int) {
 				break
 			}
 
+
 			//Getting the ICMP Echo Reply
 			body := rm.Body.(*icmp.Echo)
 			if body.ID != os.Getpid() {
@@ -146,14 +143,36 @@ func coordinator(ping chan Ping, pongBuffer int) {
 				break
 			}
 
+			//Getting the nanosec value
+			buf:= bytes.NewReader(body.Data)
+			if err:=binary.Read(buf,binary.LittleEndian,&ri.nsec); err!=nil{
+				fmt.Println("Could not convert time back")
+			}
+
 			//Find the ping request in the map and send the packet through its channel
-			if pingmap[seq] != nil {
-				pingmap[seq] <- ri
-				close(pingmap[seq])
-				delete(pingmap, seq)
+			fmt.Println("Pong Received\n")
+			if pingmap[body.Seq] != nil {
+				pingmap[body.Seq] <- ri
+				fmt.Println("Pong Sent to pongchan\n")
+				close(pingmap[body.Seq])
+				delete(pingmap, body.Seq)
+			}else{
+				fmt.Println("pingmap seq not found")
 			}
 		}
 	}
+}
+//Waits for an answer in a goroutine
+func waitPoing(pi *Ping) {
+	select {
+		case ri := <-pi.pongchan:
+			pi.Pong = Pong{Rtt: float64(ri.when.Sub(time.Unix(0,ri.nsec))) / float64(time.Millisecond)}
+		case <-time.After(time.Second * time.Duration(pi.Timeout)):
+			pi.Pong = Pong{Err: fmt.Errorf("Request Timeout after %v seconds", pi.Timeout)}
+		}
+		if pi.EchoChannel != nil {
+			pi.EchoChannel <- pi
+		}
 }
 
 type rawIcmp struct {
@@ -164,6 +183,7 @@ type rawIcmp struct {
 	cm      *ipv4.ControlMessage
 	message *icmp.Echo //The message after being parsed
 	err     error
+	nsec int64
 }
 
 func sendMessage(pi *Ping, p *ipv4.PacketConn) error {
@@ -180,13 +200,18 @@ func sendMessage(pi *Ping, p *ipv4.PacketConn) error {
 		Code: 0,
 		Body: &icmp.Echo{
 			ID:   os.Getpid() & 0xffff,
-			Data: []byte("HELLO-R-U-THERE"),
+		//	Data: []byte("HELLO-R-U-THERE"),
 		},
 	}
 	//Sets the Sequence of the Message
 	wm.Body.(*icmp.Echo).Seq = pi.Seq
 
 	//Serialize the message in a binary format
+	buf := new (bytes.Buffer)
+	if err:=binary.Write(buf,binary.LittleEndian,time.Now().UnixNano()); err!=nil{
+		fmt.Println("Could not marshall time.Now()")
+	}
+	wm.Body.(*icmp.Echo).Data = buf.Bytes()
 	wb, err := wm.Marshal(nil)
 	if err != nil {
 		return fmt.Errorf("Could not Marshall the icmp message")
@@ -197,5 +222,6 @@ func sendMessage(pi *Ping, p *ipv4.PacketConn) error {
 	if _, err := p.WriteTo(wb, nil, dst); err != nil {
 		return fmt.Errorf("Could not send message through network")
 	}
+	fmt.Println("Message Sent!",pi.Seq)
 	return nil
 }
