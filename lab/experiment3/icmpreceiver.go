@@ -56,7 +56,7 @@ func runListener(handleRawIcmp func(ri *rawIcmp)) {
 		}(ri)
 	}
 }
-func coordinator(ping chan *Ping) {
+func coordinator(ping chan Ping, pongBuffer int) {
 
 	//Maintains a sequence number
 	var seq int
@@ -73,7 +73,7 @@ func coordinator(ping chan *Ping) {
 	}
 
 	//Creates the handler to receive raw icmp
-	pong := make(chan *rawIcmp)
+	pong := make(chan *rawIcmp, pongBuffer)
 	var icmpRecvHandler = func(ri *rawIcmp) {
 		pong <- ri
 	}
@@ -92,13 +92,13 @@ func coordinator(ping chan *Ping) {
 			pi.Seq = seq
 
 			//Send the ping message. On error return the ping to EchoChannel if istantiated
-			if err := sendMessage(pi, p); err != nil {
+			if err := sendMessage(&pi, p); err != nil {
 				pi.Pong = Pong{Err: err}
 				if pi.EchoChannel != nil {
 					//Return the ping to the EchoChannel
 					go func(pi *Ping) {
 						pi.EchoChannel <- pi
-					}(pi)
+					}(&pi)
 				} else {
 					log.Printf("Could not send ping %v [%v]\n", pi, err)
 				}
@@ -107,7 +107,7 @@ func coordinator(ping chan *Ping) {
 			}
 
 			//Initializes the channel to receive the Pong
-			pi.pongchan = make(chan *rawIcmp)
+			pi.pongchan = make(chan *rawIcmp, 2)
 
 			//Registers the seq and the channel in the ping map
 			pingmap[seq] = pi.pongchan
@@ -115,14 +115,14 @@ func coordinator(ping chan *Ping) {
 			go func(pi *Ping) {
 				select {
 				case ri := <-pi.pongchan:
-					pi.Pong = Pong{Rtt: float64(ri.when.Sub(pi.When) / time.Millisecond)}
-				case <-time.After(time.Second * time.Duration(pi.Timeout)):
-					pi.Pong = Pong{Err: fmt.Errorf("Request Timeout after %v seconds", pi.Timeout)}
+					pi.Pong = Pong{Rtt: float64(pi.When.Sub(ri.when)) / float64(time.Millisecond)}
+					//case <-time.After(time.Second * time.Duration(pi.Timeout)):
+					//	pi.Pong = Pong{Err: fmt.Errorf("Request Timeout after %v seconds", pi.Timeout)}
 				}
 				if pi.EchoChannel != nil {
 					pi.EchoChannel <- pi
 				}
-			}(pi)
+			}(&pi)
 
 		case ri := <-pong:
 

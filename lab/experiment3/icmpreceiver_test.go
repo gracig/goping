@@ -12,15 +12,15 @@ import (
 )
 
 func TestCoordinator(t *testing.T) {
-	ping := make(chan *Ping)
-	pings := 10
-	echochannel := make(chan *Ping)
+	ping := make(chan Ping)
+	pings := 3
+	echochannel := make(chan *Ping, pings)
 
-	go coordinator(ping)
+	go coordinator(ping, 2048)
 
 	go func() {
-		for i := 0; i < 10; i++ {
-			ping <- &Ping{To: "localhost", Timeout: 1, EchoChannel: echochannel}
+		for i := 0; i < pings; i++ {
+			ping <- Ping{To: "localhost", Timeout: 2, EchoChannel: echochannel}
 		}
 	}()
 	for i := 0; i < pings; i++ {
