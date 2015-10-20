@@ -11,13 +11,34 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+func TestCoordinator(t *testing.T) {
+	ping := make(chan *Ping)
+	pings := 10
+	echochannel := make(chan *Ping)
+
+	go coordinator(ping)
+
+	go func() {
+		for i := 0; i < 10; i++ {
+			ping <- &Ping{To: "localhost", Timeout: 1, EchoChannel: echochannel}
+		}
+	}()
+	for i := 0; i < pings; i++ {
+		reply := <-echochannel
+		fmt.Println(reply)
+	}
+	close(echochannel)
+
+}
 func TestReceiver(t *testing.T) {
 	fmt.Println("Starting Logger")
 	messages := make(chan *rawIcmp, 100)
 	var handler = func(r *rawIcmp) {
 		messages <- r
 	}
-	runListener(handler)
+
+	fmt.Println("Running the Listener")
+	go runListener(handler)
 	fmt.Println("Starting Ping")
 	cmd := exec.Command("ping", "-c10", "localhost")
 	cmd.Stdout = os.Stdout
