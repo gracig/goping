@@ -2,6 +2,8 @@ package ggping
 
 import (
 	"fmt"
+	"net"
+	"time"
 	//	"os"
 	//	"os/exec"
 	"testing"
@@ -12,23 +14,56 @@ import (
 )
 
 func TestCoordinator(t *testing.T) {
-	ping := make(chan Ping)
-	pings := 10000
-	echochannel := make(chan *Ping, pings*3)
+	//fmt.Println(runtime.NumCPU())
+	//runtime.GOMAXPROCS(runtime.NumCPU())
+	//pings := 30000
+	pings := 30000
+	ping := make(chan Ping, pings*3)
+	pong := make(chan Ping, pings*3)
+	go pinger(ping, pong, (500 * time.Microsecond))
+	p := Ping{To: "173.194.207.105", Timeout: 2}
+	//p := Ping{To: "localhost", Timeout: 2}
+	pl := Ping{To: "localhost", Timeout: 2}
+	//Tries to convert the To attribute into an Ip attribute
+	dst, _ := net.ResolveIPAddr("ip4", p.To)
+	p.toaddr = dst
+	dst, _ = net.ResolveIPAddr("ip4", pl.To)
+	pl.toaddr = dst
 
-	go coordinator(ping)
-
-	go func() {
-		for i := 0; i < pings; i++ {
-			ping <- Ping{To: "localhost", Timeout: 2, EchoChannel: echochannel}
-		}
-	}()
+	//counter := pings
+	//go func() {
 	for i := 0; i < pings; i++ {
-		reply := <-echochannel
-		fmt.Println(reply)
+		if i%2 == 0 {
+			ping <- pl
+		} else {
+			ping <- pl
+		}
 	}
-	close(echochannel)
+	//}()
 
+	for i := 0; i < pings; i++ {
+		reply := <-pong
+		select {
+		case t := <-reply.rttchan:
+			close(reply.rttchan)
+			rtt := float64(t.Sub(reply.When)) / float64(time.Millisecond)
+			reply.Pong = Pong{Rtt: rtt}
+			if reply.Pong.Rtt > 1 || reply.Pong.Rtt < 0 {
+				fmt.Println(reply.When, reply.Seq, reply.To, reply.Pong.Rtt)
+			}
+
+		default:
+			if time.Now().Sub(reply.When) > (time.Duration(reply.Timeout) * time.Second) {
+				reply.Pong = Pong{Err: fmt.Errorf("Ping Response timed out")}
+				//			fmt.Println(reply.When, reply.Seq, reply.Pong.Err)
+			} else {
+				//Put Reply back on channel, because it has not timed out yet
+				i--
+				pong <- reply
+			}
+		}
+	}
+	close(pong)
 }
 
 /*

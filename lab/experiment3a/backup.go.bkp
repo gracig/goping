@@ -1,0 +1,199 @@
+package ggping
+
+import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
+	"log"
+	"net"
+	"os"
+	"syscall"
+	"time"
+
+	"golang.org/x/net/icmp"
+	"golang.org/x/net/ipv4"
+)
+
+const (
+	maxseq = 65536 //65536
+)
+
+//Creates a map to match requests with a channel to send response
+
+type Ping struct {
+	To      string
+	Timeout uint
+	EchoMap map[string]string
+	When    time.Time
+	Seq     int
+	Pong    Pong
+
+	rttchan chan time.Time
+	toaddr  net.Addr
+}
+
+type Pong struct {
+	Rtt float64
+	Err error
+}
+
+//Listens for ICMPTypeEchoReply Packets in a RawSocket
+//Verify if the packet is a reply from this process PID
+//Get the Packet Sequence Number
+//Get the time when the packet arrived in the Kernel using the SO_TIMESTAMP control message
+//Send the timestamp through the channel inside pingarray using the seq field as index
+func receiver(pingarray []chan time.Time) {
+
+	//Finds out the process pid
+	mypid := os.Getpid()
+
+	//Create a raw socket to read icmp packets
+	fd, _ := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_ICMP)
+
+	//Set the option to receive the kernel timestamp from each received message
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_TIMESTAMP, 1); err != nil {
+		log.Fatal("Could not set sock opt syscall")
+	}
+
+	//Create an ip address to listen for
+	var addr syscall.Sockaddr = &syscall.SockaddrInet4{
+		Port: 0,
+		Addr: [4]byte{0, 0, 0, 0},
+	}
+
+	//Bind the created socket with the address to listen for
+	if err := syscall.Bind(fd, addr); err != nil {
+		log.Fatal("Could not bind")
+	}
+
+	for {
+
+		//Buffer to receive the ping packet
+		buf := make([]byte, 1024)
+
+		//Buffer to receive the control message
+		oob := make([]byte, 64)
+
+		//Receives a message from the socket sent by the kernel
+		if _, oobn, _, _, err := syscall.Recvmsg(fd, buf, oob, 0); err != nil {
+			log.Fatal(err)
+		} else {
+
+			//Continue if id is different from mypid and if icmp type is not ICMPTypeEchoReply
+			if !(int(uint16(buf[24])<<8|uint16(buf[25])) == mypid && buf[20] == 0) {
+				continue
+			}
+
+			//Sequence ping found
+			seq := int(uint16(buf[26])<<8 | uint16(buf[27]))
+
+			//Variable to hold  the timestamp
+			var t time.Time
+
+			//Parse the received control message until the oobn size
+			cmsgs, err := syscall.ParseSocketControlMessage(oob[:oobn])
+			if err != nil {
+				log.Fatal(os.NewSyscallError("parse socket control message", err))
+			}
+
+			//Iterate over the control messages
+			for _, m := range cmsgs {
+				//Continue if control message is not syscall.SOL_SOCKET
+				if m.Header.Level != syscall.SOL_SOCKET {
+					continue
+				}
+				//Control Message is SOL_SOCKET, Verifyng if syscall is SO_TIMESTAMP
+				switch m.Header.Type {
+				case syscall.SO_TIMESTAMP:
+					//Found Timestamp. Using binary package to read from
+					var tv syscall.Timeval
+					binary.Read(bytes.NewBuffer(m.Data), binary.LittleEndian, &tv)
+					t = time.Unix(tv.Unix())
+				}
+			}
+
+			//Send the timestamp through the pingarray[seq] channel
+			pingarray[seq] <- t
+		}
+	}
+}
+
+func pinger(ping chan Ping, pong chan Ping, pingInterval time.Duration) {
+
+	//Maintains a sequence number
+	var seq int
+
+	//Initializes the slices that will receive the time channels
+	pingarray := make([]chan time.Time, maxseq)
+
+	//Creates the connection to send and receive packets
+	c, err := net.ListenPacket("ip4:1", "0.0.0.0")
+	if err != nil {
+		log.Fatal("Could not open raw socket ip4:icmp: %v", err)
+	}
+	//defer c.Close()
+	conn := ipv4.NewPacketConn(c)
+	//	if err := conn.SetControlMessage(ipv4.FlagTTL|ipv4.FlagSrc|ipv4.FlagDst|ipv4.FlagInterface, true); err != nil {
+	//		log.Fatal(err)
+	//	}
+
+	//Starts the icmp Listener in a goroutine
+	//go receiver(conn, pingarray)
+	go receiver(pingarray)
+
+	//The engine loop
+	for pi := range ping {
+
+		//Increment the sequence number and assigns to pi.Seq
+		seq = (seq + 1) % maxseq
+
+		//Sets the sequence number into the binary packet
+		//wb[6], wb[7] = uint8(seq>>8), uint8(seq&0xff)
+
+		//Set the sequence number to the ping request
+		pi.Seq = seq
+
+		//Initializes the channel to receive the Pong
+		pi.rttchan = make(chan time.Time, 1)
+
+		//Registers the seq and the channel in the ping array
+		//The listener will send a timestamp message to this channel
+		//WHen the message arrives
+		pingarray[seq] = pi.rttchan
+
+		//Sets the sequence number into the binary packet
+		//		wb[6], wb[7] = uint8(seq>>8), uint8(seq&0xff)
+		//Creates the message to be sent based on Ping parameters
+		wm := icmp.Message{
+			Type: ipv4.ICMPTypeEcho,
+			Code: 0,
+			Body: &icmp.Echo{
+				ID:   os.Getpid() & 0xffff,
+				Data: make([]byte, 56),
+				Seq:  seq,
+			},
+		}
+		//Encode the ICMP Packet into a binary representation
+		wb, err := wm.Marshal(nil)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		//Saves the time before sending the packet
+		pi.When = time.Now()
+
+		//Send the packet over the Connection
+		if _, err := conn.WriteTo(wb, nil, pi.toaddr); err != nil {
+			pi.Pong = Pong{Err: fmt.Errorf("Could not send message through network")}
+			pong <- pi
+			return
+		}
+
+		//This  permits other goroutines to run and avoid saturate the socket with too
+		//many simultaneous Echo Requests
+		time.Sleep(pingInterval)
+
+		//Returns the ping through the pong channel. The packet listener will send a timestamp if a packet arrived for this sequence
+		pong <- pi
+	}
+}
