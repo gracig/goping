@@ -21,7 +21,7 @@ type Ping struct {
 	Pong    Pong
 
 	rttchan chan time.Time
-	toaddr  net.Addr
+	toaddr  *net.IPAddr
 }
 
 type Pong struct {

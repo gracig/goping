@@ -3,6 +3,7 @@ package ggping
 import (
 	"fmt"
 	"net"
+	"runtime"
 	"time"
 	//	"os"
 	//	"os/exec"
@@ -15,13 +16,14 @@ import (
 
 func TestCoordinator(t *testing.T) {
 	//fmt.Println(runtime.NumCPU())
-	//runtime.GOMAXPROCS(runtime.NumCPU())
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	//pings := 30000
 	pings := 30000
 	ping := make(chan Ping, pings*3)
 	pong := make(chan Ping, pings*3)
-	go pinger(ping, pong, (500 * time.Microsecond))
+	go pinger(ping, pong, (000 * time.Microsecond))
 	p := Ping{To: "173.194.207.105", Timeout: 2}
+	//p := Ping{To: "192.168.0.1", Timeout: 2}
 	//p := Ping{To: "localhost", Timeout: 2}
 	pl := Ping{To: "localhost", Timeout: 2}
 	//Tries to convert the To attribute into an Ip attribute
@@ -30,16 +32,18 @@ func TestCoordinator(t *testing.T) {
 	dst, _ = net.ResolveIPAddr("ip4", pl.To)
 	pl.toaddr = dst
 
+	var max, min, sum float64
+
 	//counter := pings
-	//go func() {
-	for i := 0; i < pings; i++ {
-		if i%2 == 0 {
-			ping <- pl
-		} else {
-			ping <- pl
+	go func() {
+		for i := 0; i < pings; i++ {
+			if i%1000 == 0 {
+				ping <- pl
+			} else {
+				ping <- pl
+			}
 		}
-	}
-	//}()
+	}()
 
 	for i := 0; i < pings; i++ {
 		reply := <-pong
@@ -48,14 +52,22 @@ func TestCoordinator(t *testing.T) {
 			close(reply.rttchan)
 			rtt := float64(t.Sub(reply.When)) / float64(time.Millisecond)
 			reply.Pong = Pong{Rtt: rtt}
-			if reply.Pong.Rtt > 1 || reply.Pong.Rtt < 0 {
-				fmt.Println(reply.When, reply.Seq, reply.To, reply.Pong.Rtt)
+			if reply.Pong.Rtt > max {
+				max = reply.Pong.Rtt
 			}
+			if reply.Pong.Rtt < min || min == 0 {
+				min = reply.Pong.Rtt
+			}
+			sum += reply.Pong.Rtt
+			//		if reply.Pong.Rtt > 1 || reply.Pong.Rtt < 0 {
+			fmt.Println(reply.When, reply.Seq, reply.To, reply.Pong.Rtt)
+			//		}
 
 		default:
-			if time.Now().Sub(reply.When) > (time.Duration(reply.Timeout) * time.Second) {
+			t := time.Now()
+			if t.Sub(reply.When) > (time.Duration(reply.Timeout) * time.Second) {
 				reply.Pong = Pong{Err: fmt.Errorf("Ping Response timed out")}
-				//			fmt.Println(reply.When, reply.Seq, reply.Pong.Err)
+				fmt.Println(reply.When, t, reply.Seq, reply.Pong.Err)
 			} else {
 				//Put Reply back on channel, because it has not timed out yet
 				i--
@@ -64,6 +76,7 @@ func TestCoordinator(t *testing.T) {
 		}
 	}
 	close(pong)
+	fmt.Printf("Max: %v Min: %v Avg: %v\n", max, min, sum/float64(pings))
 }
 
 /*
