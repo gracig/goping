@@ -26,8 +26,8 @@ func newLinuxPinger(sweep time.Duration) linuxPinger {
 	return linuxPinger{
 		Sweep: sweep,
 
-		seqPongChanArray: make([]chan *Pong, maxseq),
-		seqStartArray:    make([]time.Time, maxseq),
+		seqPongChanArray: make([]chan *Pong, g_SEQUENCE.max),
+		seqStartArray:    make([]time.Time, g_SEQUENCE.max),
 		mypid:            os.Getpid(),
 		done:             make(chan struct{}),
 	}
@@ -35,13 +35,10 @@ func newLinuxPinger(sweep time.Duration) linuxPinger {
 
 //Send Icmp Packets over the network
 //Receives request from the Ping Channel
-//Register the new sequence in the pingarray that the receiver will send the timestamp
 //Send Icmp Packet through the network
 //Puts the Request back on the pong channel. The caller will verify the response and timeout
-func (p *linuxPinger) Start(ping chan *Ping, pong chan *Ping) {
-
-	//Maintains a sequence number
-	var seq int
+func (p *linuxPinger) Start(ping chan *EchoRequest, pong chan *EchoRequest) {
+	defer close(pong)
 
 	//Create a raw socket to read icmp packets
 	debug.Printf("Creating the socket to send pings\n")
@@ -58,22 +55,22 @@ func (p *linuxPinger) Start(ping chan *Ping, pong chan *Ping) {
 	go p.pongReceiver()
 
 	//Process the ping requests
-	for pi := range ping {
-		debug.Println("Received ping", pi)
+	//1) should get the pongchan channel from the received Ping pongchan array, using the pi.sent-1 as the array index
+	//2) Use local logic to make the ping. If anything goes wrong should set the err field of the received Ping object
+	//3) Should always return the Ping object without block waitng for a reply. The reply will be checked later through the pongchan channel
+	for echo := range ping {
+		debug.Printf("Received Echo Request pongchan:[%v] [%v]\n", echo.pongchan, echo.when)
 
-		//Increment the sequence number and assigns to pi.Seq
-		seq = (seq + 1) % maxseq
-		debug.Printf("Next sequence will be %v\n", seq)
+		//Storing the pongchannel in the pongchanarray indexed by the sequence number
+		//the pongchan is used to send the echoreply back (Pong object)
+		p.seqPongChanArray[echo.sequence] = echo.pongchan
 
 		//Get the marshalled bytes
-		pkt, err := pi.Marshall(p.mypid, seq, true)
-		ddebug.Printf("The marshalled packet [%v] \n%v\n", seq, pkt)
-		if err != nil {
-			log.Fatal(err)
-		}
+		pkt := append(echo.bipv4, echo.bicmp...)
+		ddebug.Printf("The marshalled packet [%v] \n%v\n", echo.sequence, pkt)
 
 		//Builds the target SockaddrInet4
-		ipb := pi.toaddr.IP.To4()
+		ipb := echo.to.IP.To4()
 		to := syscall.SockaddrInet4{
 			Port: 0,
 			Addr: [4]byte{
@@ -84,30 +81,25 @@ func (p *linuxPinger) Start(ping chan *Ping, pong chan *Ping) {
 			},
 		}
 
-		//Stores the PongChan in a array indexed by the icmp sequence number
-		//It will be used by the listener to send the pong back
-		debug.Println("Setting the pongchan channel on the seqPongChan aray", seq)
-		p.seqPongChanArray[seq] = pi.pongchan
-
 		//Setting the time before send the packet
 		//This information will be read by the listener in order to build the Pong object
-		debug.Println("Setting the Start time and sending through the network", seq)
-		p.seqStartArray[seq] = time.Now()
+		debug.Println("Setting the Start time and sending through the network", echo.sequence)
+		p.seqStartArray[echo.sequence] = time.Now()
 
 		//Sending the packet through the network
-		if err = syscall.Sendto(fd, pkt, 0, &to); err != nil {
-			pi.err = fmt.Errorf("Could not send packet over socket: %v", err)
+		if err := syscall.Sendto(fd, pkt, 0, &to); err != nil {
+			echo.err = fmt.Errorf("Could not send packet over socket: %v", err)
 		}
 
-		//This  permits other goroutines to run and avoid saturate the socket with too
-		//many simultaneous Echo Requests
-		debug.Printf("Sleeping for %v [%v]\n", seq, p.Sweep)
+		//This  permits other goroutines to run and avoid saturate the socket with too many simultaneous Echo Requests
+		debug.Printf("Sleeping for %v [%v]\n", echo.sequence, p.Sweep)
 		time.Sleep(p.Sweep)
-		pi.when = p.seqStartArray[seq]
+		echo.when = p.seqStartArray[echo.sequence]
 
 		//Returns the ping through the pong channel. The receiver will send a timestamp if a packet arrived for this sequence
-		debug.Printf("Returning Ping %v\n", seq)
-		pong <- pi
+		debug.Printf("Returning Echo Request index: [%v] sequence:[%v] pongchan:[%v]\n", echo.index, echo.sequence, echo.pongchan)
+		pong <- echo
+		debug.Printf("Returned Echo Request index: [%v] sequence:[%v] pongchan:[%v]\n", echo.index, echo.sequence, echo.pongchan)
 	}
 }
 
@@ -125,6 +117,10 @@ func (p *linuxPinger) pongReceiver() {
 		log.Fatal("Could not set sock opt syscall")
 	}
 
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, 1024*1024*1024); err != nil {
+		log.Fatal("Could not set sock opt syscall Increase buffer")
+	}
+
 	//Create an ip address to listen for
 	var addr syscall.Sockaddr = &syscall.SockaddrInet4{
 		Port: 0,
@@ -137,7 +133,6 @@ func (p *linuxPinger) pongReceiver() {
 	}
 
 	for {
-
 		//Buffer to receive the ping packet
 		buf := make([]byte, 1024)
 
@@ -145,60 +140,82 @@ func (p *linuxPinger) pongReceiver() {
 		oob := make([]byte, 64)
 
 		//Receives a message from the socket sent by the kernel
-		if _, oobn, _, _, err := syscall.Recvmsg(fd, buf, oob, 0); err != nil {
-			log.Printf("Error reading icmp packet from the socket: %v", err)
-			return
-		} else {
+		//Continue on error
+		pktsz, oobn, _, peer, err := syscall.Recvmsg(fd, buf, oob, 0)
+		if err != nil {
+			severe.Printf("Error reading icmp packet from the socket: %v\n", err)
+			continue
+		}
+		//Exracting ip header from the packet
+		iph := buf[:20]
+		//Extracting icmp message from thr packet
+		msg := buf[20:pktsz]
 
-			//Continue if id is different from mypid and if icmp type is not ICMPTypeEchoReply
-			if !(int(uint16(buf[24])<<8|uint16(buf[25])) == p.mypid && buf[20] == 0) {
-				ddebug.Printf("IGNORED packet %v\n", buf)
+		//Find the first 8 bytes from the Echo Request message
+		emsg := msg[:8]
+
+		//Finds if it was an error message, changes emsg accordingly
+		//The default section ignores the message and tries to read other packets
+		var icmperror error
+		switch msg[0] {
+		case 0:
+		case 8:
+			continue
+		default:
+			emsg = msg[28:]
+			icmperror = fmt.Errorf("There was an error with code %v", msg[0])
+		}
+
+		//Extracts id and seq
+		pid := int(uint16(emsg[4])<<8 | uint16(emsg[5]))
+		seq := int(uint16(emsg[6])<<8 | uint16(emsg[7]))
+
+		//Ignores processing if id is different from mypid
+		if pid != p.mypid {
+			continue
+		}
+
+		//Build the Pong Object to be sent. The Echo End is filled with time.Now in case the timestamp
+		//from SO_TIMESTAMP fails
+		pong := Pong{
+			EchoStart: p.seqStartArray[seq],
+			EchoEnd:   time.Now(),
+			iph:       iph,
+			imh:       msg,
+			Err:       icmperror,
+			peer:      peer.(*syscall.SockaddrInet4).Addr[:],
+		}
+
+		//Parse the received control message until the oobn size
+		cmsgs, err := syscall.ParseSocketControlMessage(oob[:oobn])
+		if err != nil {
+			pong.Err = os.NewSyscallError("parse socket control message", err)
+		}
+		debug.Println("Controle Message received from socket was parsed")
+
+		//Iterate over the control messages
+		for _, m := range cmsgs {
+			//Continue if control message is not syscall.SOL_SOCKET
+			if m.Header.Level != syscall.SOL_SOCKET {
 				continue
 			}
-
-			ddebug.Printf("ACCEPTED packet %v\n", buf)
-			//Extracting the sequence field from the packet
-			seq := int(uint16(buf[26])<<8 | uint16(buf[27]))
-			debug.Printf("Received Pong Sequence %v\n", seq)
-
-			//Build the Pong Object to be sent. The Echo End is filled with time.Now in case the timestamp
-			//from SO_TIMESTAMP fails
-			pong := Pong{
-				EchoStart: p.seqStartArray[seq],
-				EchoEnd:   time.Now(),
-				Sequence:  seq,
+			//Control Message is SOL_SOCKET, Verifyng if syscall is SO_TIMESTAMP
+			switch m.Header.Type {
+			case syscall.SO_TIMESTAMP:
+				//Found Timestamp. Using binary package to read from
+				debug.Println("SO_TIMESTAMP message found")
+				var tv syscall.Timeval
+				binary.Read(bytes.NewBuffer(m.Data), binary.LittleEndian, &tv)
+				pong.EchoEnd = time.Unix(tv.Unix())
+				debug.Println("Pong EchoEnd changed ", pong)
 			}
-			debug.Printf("Pong Object created Sequence %v %v\n", seq, pong)
-
-			//Parse the received control message until the oobn size
-			cmsgs, err := syscall.ParseSocketControlMessage(oob[:oobn])
-			if err != nil {
-				pong.err = os.NewSyscallError("parse socket control message", err)
-			}
-			debug.Println("Controle Message received from socket was parsed")
-
-			//Iterate over the control messages
-			for _, m := range cmsgs {
-				//Continue if control message is not syscall.SOL_SOCKET
-				if m.Header.Level != syscall.SOL_SOCKET {
-					continue
-				}
-				//Control Message is SOL_SOCKET, Verifyng if syscall is SO_TIMESTAMP
-				switch m.Header.Type {
-				case syscall.SO_TIMESTAMP:
-					//Found Timestamp. Using binary package to read from
-					debug.Println("SO_TIMESTAMP message found")
-					var tv syscall.Timeval
-					binary.Read(bytes.NewBuffer(m.Data), binary.LittleEndian, &tv)
-					pong.EchoEnd = time.Unix(tv.Unix())
-					debug.Println("Pong EchoEnd changed ", pong)
-				}
-			}
-
-			//Send the pong object  back to the caller
-			debug.Println("Sending pong reference to the ping.pongchan reference ", p.seqPongChanArray[seq], seq)
-			p.seqPongChanArray[seq] <- &pong
-			ddebug.Println("Sent pong reference to the ping.pongchan reference ", p.seqPongChanArray[seq], seq)
 		}
+
+		//Send the pong object  back to the caller
+		debug.Println("Sending pong reference to the ping.pongchan reference ", p.seqPongChanArray[seq], seq)
+		go func() {
+			p.seqPongChanArray[seq] <- &pong
+			debug.Println("Sent pong reference to the ping.pongchan reference ", p.seqPongChanArray[seq], seq)
+		}()
 	}
 }

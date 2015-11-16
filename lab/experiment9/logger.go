@@ -4,6 +4,7 @@ import "log"
 
 const debug debugging = false  // or flip to false
 const info debugging = true    // or flip to false
+const severe debugging = true  // or flip to false
 const ddebug debugging = false // or flip to false
 
 type debugging bool
