@@ -24,12 +24,15 @@ type pingTaskRow struct {
 }
 
 var pingTaskTable = []pingTaskRow{
-	{Peak: 10, Iter: 3000, To: "localhost", Timeout: 3 * time.Second, Interval: 1000 * time.Millisecond, TOS: 0, TTL: 64, REQUESTS: 100, PKTSZ: 100, UserMap: nil},
-	{Peak: 0, Iter: 1, To: "www.google.com", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
-	{Peak: 10, Iter: 1, To: "192.168.0.1", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
-	{Peak: 10, Iter: 1, To: "www.terra.com.br", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
-	{Peak: 10, Iter: 1, To: "www.uol.com.br", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
-	{Peak: 10, Iter: 1, To: "www.ig.com.br", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
+	/*
+		{Peak: 10, Iter: 3000, To: "localhost", Timeout: 3 * time.Second, Interval: 1000 * time.Millisecond, TOS: 0, TTL: 64, REQUESTS: 100, PKTSZ: 100, UserMap: nil},
+		{Peak: 0, Iter: 1, To: "www.google.com", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
+		{Peak: 10, Iter: 1, To: "192.168.0.1", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
+		{Peak: 10, Iter: 1, To: "www.terra.com.br", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
+		{Peak: 10, Iter: 1, To: "www.uol.com.br", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
+		{Peak: 10, Iter: 1, To: "www.ig.com.br", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
+	*/
+	{Peak: 10, Iter: 1, To: "41.0.0.10", Timeout: 3 * time.Second, Interval: 1 * time.Second, TOS: 0, TTL: 64, REQUESTS: 10, PKTSZ: 100, UserMap: nil},
 }
 
 var wg sync.WaitGroup
@@ -136,7 +139,7 @@ func pingOverChannel(task *Ping, send chan EchoRequest) {
 			succeded++
 			countpctl++
 			rtt := float64(pp.pong.When.Sub(pp.ping.When)) / float64(time.Millisecond)
-			debug.Println("OK:", pp.ping.To, rtt, task.Id)
+			info.Println("OK:", pp.ping.To, rtt, task.Id)
 			if min == 0 || min > rtt {
 				min = rtt
 			}

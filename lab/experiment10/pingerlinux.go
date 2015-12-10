@@ -75,6 +75,7 @@ func (p *linuxPinger) Start(ping chan EchoRequest) {
 
 		//This information will be read by the listener in order to build the EchoReply object
 		when := time.Now()
+		info.Println(pkt)
 
 		//Sending the packet through the network
 		if err := syscall.Sendto(fd, pkt, 0, echo.tosockaddr); err != nil {
@@ -140,6 +141,7 @@ func (p *linuxPinger) pongReceiver() {
 			severe.Printf("Error reading icmp packet from the socket: %v\n", err)
 			continue
 		}
+		info.Println(buf)
 		//Exracting ip header from the packet
 		iph := buf[:20]
 		//Extracting icmp message from thr packet
