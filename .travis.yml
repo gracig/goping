@@ -19,7 +19,7 @@ deploy:
     secure: Zk4h8WMhqu6c7FCbHCqPwA0+JIreiP3x12816zAO+/HlTmL/PJAGxXAbeItSK8B7tus8yGD//MuDq555x+mxelcMgLKDP0+LwemhyrvRp9UI3+tPq6gmfxceprILnz3OaPJOshZa1jwLeu9byxJ0DZanMIQjKdfpdtdHJDBaReV6fSUOWq48zhvQiodul1J6bSy8Em6PBM4G8zHZIr95llAWa3N3UEKMjPKrTksaAaht1z8C63vHvVvst196DM2VDMtEW+mFFkM1XtJKkiBL+JB5jsuqUoiSWrHPCktBjoo3rtwlBmCxGXXubNcR+8096igFIIFAu/h/mLXmY+RpowPUgImhqceOIlqP4Xv0O0yqJInJOgl5m/EVlX00tbirF9+OjazCQCLbx1qa3N0n9jdHxQHQzyPNbc9dGGnmxyFtMm1XnjqBJ8H1H8vlwqz5fcR7xu0r5Lx4fbHrA01fvSjYsTMRhI3juRHL2p3pGlsZ/CrxSeGFyluIRwXRBrb9YbKehvpnzek6zVUMlJklEATOKFChaSJ6JNBWx1trFRt+IwWUoIJ48VmR6N4rWiuAa3RPpkTtpyjZBq1hpZnthrGJEPpji+piEgyyDCgVkxkbyIQNt08qTcQOy+FNL4xsgTCdXss7TJKboI6eRYeIGcw9QWQiOUSdBvSRxT87nbw=
   file: 
   - release/goping-linux-amd64
-  - release/goping-linux-x386
+  - release/goping-linux-386
   - release/goping-linux-arm
   skip_cleanup: true
   on:
