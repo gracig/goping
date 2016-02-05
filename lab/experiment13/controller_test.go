@@ -130,6 +130,17 @@ func (osp *fakeospinger) Ping(r Requester) time.Time {
 	return osp.timeToReturn
 }
 
+type testRequest struct {
+	failBefore bool
+	trequest
+}
+
+var testRequestTable = []testRequest{
+	{false, trequest{
+		target: new(target),
+	}},
+}
+
 func TestControllerPing(t *testing.T) {
 	Convey("Given a fake OSPinger with the Ping function implemented", t, func() {
 		osp := new(fakeospinger)
@@ -142,10 +153,6 @@ func TestControllerPing(t *testing.T) {
 			})
 		})
 	})
-	type testRequest struct {
-		trequest
-		failBefore bool
-	}
 
 	Convey("Given a list of Requests and expected behaviours", t, func() {
 		Convey("When calling the controller Ping function for each one of those", func() {
