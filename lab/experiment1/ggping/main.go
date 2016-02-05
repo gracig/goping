@@ -3,7 +3,7 @@ package main
 import (
 	"time"
 
-	"github.com/gersongraciani/ggping"
+	"github.com/gersongraciani/goping"
 )
 
 const repeatGroup int = 100
@@ -17,7 +17,7 @@ const maxWorkers int = 100
 //2015/10/15 00:15:06 Ping Unmatched Response: PING www.google.com (173.194.205.103) 100(128) bytes of data.
 
 func main() {
-	requests := []*ggping.PingRequest{
+	requests := []*goping.PingRequest{
 		//		{To: "www.cnn.com", Tos: 16, Timeout: 1, MaxPings: 10, MinWait: 0.1, Percentil: 90, UserMap: map[string]string{"company": "cnn"}},
 		//		{To: "www.microsoft.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "microsoft"}},
 		//		{To: "www.dell.com", Timeout: 1, MaxPings: 10, MinWait: 1, Percentil: 90, UserMap: map[string]string{"company": "dell"}},
@@ -29,13 +29,13 @@ func main() {
 	}
 
 	startTime := time.Now()
-	//pongs := make([]*ggping.Pong, 0, repeatGroup*len(requests))
-	pongs := make(chan *ggping.Pong)
+	//pongs := make([]*goping.Pong, 0, repeatGroup*len(requests))
+	pongs := make(chan *goping.Pong)
 	go func() {
 		defer close(pongs)
 		for i := 0; i < repeatGroup; i++ {
 			for _, request := range requests {
-				pongs <- ggping.Ping(*&request)
+				pongs <- goping.Ping(*&request)
 			}
 		}
 	}()

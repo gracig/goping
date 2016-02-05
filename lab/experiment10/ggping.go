@@ -1,1 +1,1 @@
-package ggping
+package goping

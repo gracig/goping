@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gersongraciani/ggping/lab/experiment12"
+	"github.com/gersongraciani/goping/lab/experiment12"
 )
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -64,7 +64,7 @@ func main() {
 		log.Fatal("Could not get hostname address")
 	}
 	for _, t := range pingTaskTable {
-		s := ggping.Settings{
+		s := goping.Settings{
 			Bytes:          int(t.PKTSZ),
 			CyclesCount:    t.REQUESTS,
 			CyclesInterval: t.Interval,
@@ -74,7 +74,7 @@ func main() {
 		}
 
 		//Populating the list
-		var targets []*ggping.Target
+		var targets []*goping.Target
 		f, err := os.Open(t.To)
 		if err != nil {
 			log.Fatal("Could not open ips file")
@@ -87,16 +87,16 @@ func main() {
 				log.Printf("Could not resolve address: %s\n", host)
 				continue
 			}
-			targets = append(targets, &ggping.Target{From: sourceIp, IP: ip, UserData: t.UserMap})
+			targets = append(targets, &goping.Target{From: sourceIp, IP: ip, UserData: t.UserMap})
 		}
 		if scanner.Err() != nil {
 			log.Fatal("Error scanning ips file")
 		}
 		f.Close()
 
-		//ggping.SetPoolSize(len(targets) * 3)
-		ggping.SetPoolSize(33000)
-		chreply := ggping.RunCh(targets, s)
+		//goping.SetPoolSize(len(targets) * 3)
+		goping.SetPoolSize(33000)
+		chreply := goping.RunCh(targets, s)
 
 		for reply := range chreply {
 			fmt.Printf("%v-%v\n", reply.Target.IP, reply)

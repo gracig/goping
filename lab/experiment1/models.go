@@ -1,4 +1,4 @@
-package ggping
+package goping
 
 import (
 	"fmt"
@@ -10,8 +10,8 @@ import (
 //The solely function of this library
 //You call Ping passing a Ping Request as argument.
 //i
-//   request = &ggping.PingRequest{To:"localhost"} //Create a PingRequest object
-//   ggping.Ping(request )  //Call the ping function
+//   request = &goping.PingRequest{To:"localhost"} //Create a PingRequest object
+//   goping.Ping(request )  //Call the ping function
 //   pong := <- request.Pong  //Receive the response using the channel Pong of the PingRequest object
 //
 //   Print Results:

@@ -1,4 +1,4 @@
-package ggping
+package goping
 
 var (
 	isRunning bool

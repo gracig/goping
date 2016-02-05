@@ -1,4 +1,4 @@
-package ggping
+package goping
 
 import (
 	"fmt"
@@ -116,12 +116,12 @@ type Pooler interface {
 
 	//Retrieves a Request object from the sync.Pool
 	//Calls the SetPool method passing itself reference
-	//Should set the Controller object using the method ggping.Controller()
+	//Should set the Controller object using the method goping.Controller()
 	NewRequest() Requester
 
 	//Retrieves a Response object from the Pool
 	//Calls the SetPool method passing itself reference
-	//Should set the Controller object using the method ggping.Controller()
+	//Should set the Controller object using the method goping.Controller()
 	NewResponse() Responder
 
 	//Releases a Requester object. It is called internally by the Requester.Release() method
@@ -161,7 +161,7 @@ type OSPinger interface {
 
 /*
 Requester represents an ICMP Echo Request message with a target ip
-A request is created using the ggping.Pool().NewRequest() method
+A request is created using the goping.Pool().NewRequest() method
 The caller should fill the attributes like:
 
 	from Message Interface:
@@ -284,9 +284,9 @@ call its Release method to return it to the pool as soon as possible. This
 will lower the pressure on the garbage collector, as i learned reading blogs
 and the guys that are making the cockroachdb (sync.Pool)
 
-To get a Request Message r:=ggping.Pool().NewRequest()
+To get a Request Message r:=goping.Pool().NewRequest()
 
-To get a Response Message r:=ggping.Pool().NewResponse()
+To get a Response Message r:=goping.Pool().NewResponse()
 */
 type Messenger interface {
 

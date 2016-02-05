@@ -1,4 +1,4 @@
-package ggping
+package goping
 
 import (
 	"bufio"
@@ -112,7 +112,7 @@ func (p GoPinger) Ping(request *PingRequest, response *PingResponse, seq int) {
 
 //Pinger implementations goes here
 //Defines the linux pinger. this should implement a ping using the SO ping command
-//It should implement the Pinger interface to be called by the main ggping
+//It should implement the Pinger interface to be called by the main goping
 type LinuxPinger struct{}
 
 func (p LinuxPinger) Ping(request *PingRequest, response *PingResponse, seq int) {

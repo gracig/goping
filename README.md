@@ -1,4 +1,4 @@
-# ggping
+# goping
 Ping multiple hosts at once using go language
 
 # Important Note
