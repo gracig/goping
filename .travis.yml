@@ -12,4 +12,5 @@ install:
   - go get  github.com/smartystreets/goconvey
   - go get  -d golang.org/x/net || true
 
-script: go test -v github.com/gersongraciani/goping/lab/experiment13
+script: 
+  - go test -v github.com/gersongraciani/goping/lab/experiment13
