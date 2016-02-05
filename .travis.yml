@@ -6,6 +6,7 @@ env:
   global:
     - GOARCH=amd64
     - GO15VENDOREXPERIMENT=1
+    - GOOS=linux
     
 install:
   - go get  github.com/smartystreets/goconvey
