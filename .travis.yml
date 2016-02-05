@@ -10,7 +10,7 @@ env:
 install:
 - go get  github.com/smartystreets/goconvey
 - go get  -d golang.org/x/net || true
-- make install
+- make release
 script:
 - go test -v github.com/gersongraciani/goping/lab/experiment13
 deploy:
