@@ -20,6 +20,7 @@ install:
 - make release
 - docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" 
 - docker build -t gersongraciani/goping:test .
+- find /
 - docker build -t gersongraciani/goping:latest docker-deploy
 
 
