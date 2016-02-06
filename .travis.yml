@@ -20,6 +20,7 @@ install:
 - make release
 - docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" 
 - docker build -t gersongraciani/goping:test .
+- docker build -t gersongraciani/goping:latest docker-deploy
 
 
 script:
@@ -42,7 +43,4 @@ deploy:
     tags: true
 
 after_deploy:
-  - docker build -t gersongraciani/goping:$TRAVIS_TAG docker-deploy
-  - docker push gersongraciani/goping:$TRAVIS_TAG
-  - docker build -t gersongraciani/goping:latest docker-deploy
   - docker push gersongraciani/goping:latest
