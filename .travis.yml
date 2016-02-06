@@ -20,11 +20,6 @@ install:
 - make release
 - docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" 
 - docker build -t gersongraciani/goping:test .
-- pwd
-- find .
-- mv Dockerfile Dockerfile.test
-- mv docker-deploy/Dockerfile .  
-- docker build -t gersongraciani/goping:latest .
 
 
 script:
@@ -47,4 +42,10 @@ deploy:
     tags: true
 
 after_deploy:
+  - mv Dockerfile Dockerfile.test
+  - cp -f docker-deploy/Dockerfile .  
+  - docker build -t gersongraciani/goping:${TRAVIS_TAG} .
+  - docker push gersongraciani/goping:${TRAVIS_TAG}
+  - docker build -t gersongraciani/goping:latest .
   - docker push gersongraciani/goping:latest
+  - mv Dockerfile.test Dockerfile 
