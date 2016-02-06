@@ -22,7 +22,9 @@ install:
 - docker build -t gersongraciani/goping:test .
 - pwd
 - find .
-- docker build -t gersongraciani/goping:latest docker-deploy
+- mv Dockerfile Dockerfile.test
+- mv docker-deploy/Dockerfile .  
+- docker build -t gersongraciani/goping:latest .
 
 
 script:
