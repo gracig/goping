@@ -3,5 +3,5 @@ package main
 import "fmt"
 
 func main() {
-    fmt.Println("Main Program. modified inside the vm")
+	fmt.Println("goping. Still in development phase.")
 }
