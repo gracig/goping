@@ -15,7 +15,6 @@ env:
   - GOOS=linux
     
 install:
-- go get  github.com/smartystreets/goconvey
 - go get  -d golang.org/x/net || true
 - make release
 - docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" 
