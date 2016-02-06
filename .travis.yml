@@ -24,6 +24,8 @@ install:
 
 script:
 - docker run gersongraciani/goping:test
+
+after_success:
 - docker push gersongraciani/goping:test
 
 deploy:
@@ -38,3 +40,9 @@ deploy:
   on:
     repo: gersongraciani/goping
     tags: true
+
+after_deploy:
+  - docker build -t gersongraciani/goping:$TRAVIS_TAG docker-deploy
+  - docker push gersongraciani/goping:$TRAVIS_TAG
+  - docker build -t gersongraciani/goping:latest docker-deploy
+  - docker push gersongraciani/goping:latest
