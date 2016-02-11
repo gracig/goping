@@ -15,6 +15,8 @@ after_success:
 
 before_deploy:
 - make release
+- ls release/*
+- sudo chmod 666 -R release
 
 deploy:
   provider: releases
@@ -34,8 +36,8 @@ after_deploy:
   - mv Dockerfile Dockerfile.test
   - cp -f Dockerfile.release Dockerfile   
   - ls release/*
-  - sudo docker build -t gersongraciani/goping:${TRAVIS_TAG} .
+  - docker build -t gersongraciani/goping:${TRAVIS_TAG} .
   - docker push gersongraciani/goping:${TRAVIS_TAG}
-  - sudo docker build -t gersongraciani/goping:latest .
+  - docker build -t gersongraciani/goping:latest .
   - docker push gersongraciani/goping:latest
   - mv Dockerfile.test Dockerfile 
