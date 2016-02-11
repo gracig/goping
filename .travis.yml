@@ -1,31 +1,20 @@
-language: go
-
 services:
   - docker
 
 sudo: true
 
-go:
-- 1.5.3
-
-env:
-  global:
-  - GOARCH=amd64
-  - GO15VENDOREXPERIMENT=1
-  - GOOS=linux
-    
 install:
-- go get  -d golang.org/x/net || true
+- docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" 
+- make build
 
 script:
-- go test -v -cover -coverprofile cover.out ./shared
-
+- make test
 
 after_success:
+- make push
+
+before_deploy:
 - make release
-- docker login -e="$DOCKER_EMAIL" -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" 
-- docker build -t gersongraciani/goping:test .
-- docker push gersongraciani/goping:test
 
 deploy:
   provider: releases
@@ -35,6 +24,7 @@ deploy:
   - release/goping-linux-amd64
   - release/goping-linux-386
   - release/goping-linux-arm
+  - release/goping-darwin-amd64
   skip_cleanup: true
   on:
     repo: gersongraciani/goping
@@ -42,7 +32,7 @@ deploy:
 
 after_deploy:
   - mv Dockerfile Dockerfile.test
-  - cp -f docker-deploy/Dockerfile .  
+  - cp -f Dockerfile.release Dockerfile   
   - docker build -t gersongraciani/goping:${TRAVIS_TAG} .
   - docker push gersongraciani/goping:${TRAVIS_TAG}
   - docker build -t gersongraciani/goping:latest .
