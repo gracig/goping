@@ -33,8 +33,9 @@ deploy:
 after_deploy:
   - mv Dockerfile Dockerfile.test
   - cp -f Dockerfile.release Dockerfile   
-  - docker build -t gersongraciani/goping:${TRAVIS_TAG} .
+  - ls release/*
+  - sudo docker build -t gersongraciani/goping:${TRAVIS_TAG} .
   - docker push gersongraciani/goping:${TRAVIS_TAG}
-  - docker build -t gersongraciani/goping:latest .
+  - sudo docker build -t gersongraciani/goping:latest .
   - docker push gersongraciani/goping:latest
   - mv Dockerfile.test Dockerfile 
