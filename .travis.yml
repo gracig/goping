@@ -15,8 +15,6 @@ after_success:
 
 before_deploy:
 - make release
-- ls release/*
-- sudo chmod 666 -R release
 
 deploy:
   provider: releases
