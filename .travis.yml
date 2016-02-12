@@ -15,7 +15,14 @@ after_success:
 
 before_deploy:
   - make release
-
+  - mv Dockerfile Dockerfile.test
+  - cp -f Dockerfile.release Dockerfile
+  - ls release/*
+  - docker build -t gersongraciani/goping:${TRAVIS_TAG} .
+  - docker push gersongraciani/goping:${TRAVIS_TAG}
+  - docker build -t gersongraciani/goping:latest .
+  - docker push gersongraciani/goping:latest
+  - mv Dockerfile.test Dockerfile
 deploy:
   provider: releases
   api_key:
@@ -29,13 +36,3 @@ deploy:
   on:
     repo: gersongraciani/goping
     tags: true
-
-after_deploy:
-  - mv Dockerfile Dockerfile.test
-  - cp -f Dockerfile.release Dockerfile
-  - ls release/*
-  - docker build -t gersongraciani/goping:${TRAVIS_TAG} .
-  - docker push gersongraciani/goping:${TRAVIS_TAG}
-  - docker build -t gersongraciani/goping:latest .
-  - docker push gersongraciani/goping:latest
-  - mv Dockerfile.test Dockerfile
