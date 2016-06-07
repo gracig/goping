@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/gersongraciani/goping/protocol"
+	"github.com/gracig/goping/protocol"
 )
 
 func main() {
