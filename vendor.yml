@@ -1,0 +1,5 @@
+vendors:
+- path: github.com/golang/protobuf
+  rev: 0c1f6d65b5a189c2250d10e71a5506f06f9fa0a0
+- path: github.com/gracig/goshared
+  rev: 6ed6617b7f9d6ae3b3094f24e0a3c1ddbe2f5cee
