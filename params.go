@@ -8,10 +8,6 @@ import (
 	"github.com/gracig/goshared/log"
 )
 
-const (
-	MAXPACKET = 64 - 8
-)
-
 /*
 SYNOPSIS
      ping [-AaCDdfnoQqRrv] [-b boundif] [-c count] [-G sweepmaxsize]
@@ -68,20 +64,22 @@ func init() {
 		os.Exit(0)
 	}
 
-	log.Debug.Printf("Parameter %v=%v\n", "npackets", npackets)
-	log.Debug.Printf("Parameter %v=%v\n", "fDebug", fDebug)
-	log.Debug.Printf("Parameter %v=%v\n", "fFlood", fFlood)
-	log.Debug.Printf("Parameter %v=%v\n", "interval", interval)
-	log.Debug.Printf("Parameter %v=%v\n", "preload", preload)
-	log.Debug.Printf("Parameter %v=%v\n", "fNumeric", fNumeric)
-	log.Debug.Printf("Parameter %v=%v\n", "pattern", pattern)
-	log.Debug.Printf("Parameter %v=%v\n", "fQuiet", fQuiet)
-	log.Debug.Printf("Parameter %v=%v\n", "fRroute", fRroute)
-	log.Debug.Printf("Parameter %v=%v\n", "fDontRoute", fDontRoute)
-	log.Debug.Printf("Parameter %v=%v\n", "fVerbose", fVerbose)
-	log.Debug.Printf("Parameter %v=%v\n", "datalen", datalen)
-	log.Debug.Printf("Parameter %v=%v\n", "mloopback", mloopback)
-	log.Debug.Printf("Parameter %v=%v\n", "ttl", ttl)
-	log.Debug.Printf("Parameter %v=%v\n", "minterface", minterface)
+	if log.Debug {
+		log.Debug.Printf("Parameter %v=%v\n", "npackets", npackets)
+		log.Debug.Printf("Parameter %v=%v\n", "fDebug", fDebug)
+		log.Debug.Printf("Parameter %v=%v\n", "fFlood", fFlood)
+		log.Debug.Printf("Parameter %v=%v\n", "interval", interval)
+		log.Debug.Printf("Parameter %v=%v\n", "preload", preload)
+		log.Debug.Printf("Parameter %v=%v\n", "fNumeric", fNumeric)
+		log.Debug.Printf("Parameter %v=%v\n", "pattern", pattern)
+		log.Debug.Printf("Parameter %v=%v\n", "fQuiet", fQuiet)
+		log.Debug.Printf("Parameter %v=%v\n", "fRroute", fRroute)
+		log.Debug.Printf("Parameter %v=%v\n", "fDontRoute", fDontRoute)
+		log.Debug.Printf("Parameter %v=%v\n", "fVerbose", fVerbose)
+		log.Debug.Printf("Parameter %v=%v\n", "datalen", datalen)
+		log.Debug.Printf("Parameter %v=%v\n", "mloopback", mloopback)
+		log.Debug.Printf("Parameter %v=%v\n", "ttl", ttl)
+		log.Debug.Printf("Parameter %v=%v\n", "minterface", minterface)
+	}
 
 }
