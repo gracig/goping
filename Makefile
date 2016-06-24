@@ -1,24 +1,26 @@
-package = github.com/gersongraciani/goping
-image = gersongraciani/goping:test
-binary = /build/release/goping
+package = github.com/gracig/goping
+image = gracig/goping:test
+binary = goping
+releasedir = release
 
 .PHONY: build
 
 all: build 
 
 build:
-	docker build -t $(image) .
+	go build ./...
 test: 
-	docker run --rm  $(image)
+	go test ./...
 push:
 	docker push $(image)
 
 release: 
-	mkdir release
-	docker run --rm -v `pwd`:/build -e "GOOS=linux" -e "GOARCH=amd64" $(image) go build -o $(binary)-linux-amd64 $(package)
-	docker run --rm -v `pwd`:/build -e "GOOS=linux" -e "GOARCH=386" $(image) go build -o $(binary)-linux-386 $(package)
-	docker run --rm -v `pwd`:/build -e "GOOS=linux" -e "GOARCH=arm" $(image) go build -o $(binary)-linux-arm $(package)
-	docker run --rm -v `pwd`:/build -e "GOOS=darwin" -e "GOARCH=amd64" $(image) go build -o $(binary)-darwin-amd64 $(package)
+	mkdir -p $(releasedir)
+	GOOS=linux GOARCH=amd64 go build -o $(releasedir)/$(binary)-linux-amd64 $(package)
+	GOOS=linux GOARCH=386 go build -o $(releasedir)/$(binary)-linux-386 $(package)
+	GOOS=linux GOARCH=arm go build -o $(releasedir)/$(binary)-linux-arm $(package)
+	GOOS=darwin GOARCH=amd64 go build -o $(releasedir)/$(binary)-darwin-amd64 $(package)
+	GOOS=windows GOARCH=amd64 go build -o $(releasedir)/$(binary)-windows-amd64.exe $(package)
 
 clean:
 	rm -rf release
