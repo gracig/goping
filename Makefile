@@ -2,17 +2,17 @@ package = github.com/gracig/goping
 image = gracig/goping:test
 binary = goping
 releasedir = release
+builddir = build
 
 .PHONY: build
 
 all: build 
 
 build:
-	go build ./...
+	mkdir -p $(builddir)
+	cd cmd && go build -o $(builddir)/$(binary)
 test: 
 	go test ./...
-push:
-	docker push $(image)
 
 release: 
 	mkdir -p $(releasedir)
