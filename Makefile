@@ -12,7 +12,7 @@ goinstall:
 	cd cmd/goping && go install
 
 build:
-	cd cmd/goping && go build $(builddir)/goping
+	cd cmd/goping && go build -o ../../$(builddir)/goping
 
 test: 
 	go test ./...
