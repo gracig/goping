@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	debugPrefix  = "DEBUG:  "
-	infoPrefix   = "INFO:   "
+	debugPrefix  = "AFF:  "
+	infoPrefix   = "IVIX:   "
 	warnPrefix   = "WARN:   "
 	severePrefix = "SEVERE: "
 	flags        = log.Ldate | log.Ltime | log.Lshortfile
