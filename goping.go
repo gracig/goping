@@ -4,6 +4,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"math"
 
 	"github.com/gracig/goshared/log"
 )
@@ -30,7 +31,6 @@ type Pong struct {
 }
 
 type seqPing struct {
-	seq      uint64
 	ping     Ping
 	onPong   func(ping Ping, pong Pong)
 	onFinish func(ping Ping)
@@ -50,23 +50,42 @@ var (
 )
 
 func Add(ping Ping, onPong func(ping Ping, pong Pong), onFinish func(ping Ping)) error {
-	sequence := atomic.AddUint64(&seq, 1) % MAX_SEQUENCE
-	chPing <- seqPing{sequence, ping, onPong, onFinish}
+	chPing <- seqPing{ping, onPong, onFinish}
 	return nil
 }
 
 func Run() {
 	//Work with all states inside this function
 
-	//var seqstore []Ping = make([]Ping, MAX_SEQUENCE, MAX_SEQUENCE)
+	var recvchans []chan Pong = make([]chan Pong, MAX_SEQUENCE, MAX_SEQUENCE)
 
 	for {
 		select {
 		case p := <-chPing:
 			log.Info.Printf("Called ping\n")
 			if p.ping.Sent < p.ping.Recv {
+				//Prepare Ping
+				sequence := atomic.AddUint64(&seq, 1) % MAX_SEQUENCE
 				p.ping.Sent++
+				if (recvchans[sequence] != nil){
+					close (recvchans[sequence])
+					recvchans[sequence] = nil
+				}
+				recvchans[sequence] = make (chan Pong,1) //The number avoid the channel to hold state
+
 				//Make a ping
+
+				//Wait a response
+				go func(sequence uint64 ,p seqPing, chrecv chan Pong){
+					tout :=  time.NewTimer(time.Second * 3)
+					var pong Pong = Pong{ sequence, math.NaN()}
+					select {
+					case <-tout.C:
+						log.Warn.Println("Timed out")
+					case pong= <-chrecv:
+					}
+					p.onPong(p.ping, pong)
+				}(sequence, p , recvchans[sequence])
 			} else {
 				//Finish Ping
 
