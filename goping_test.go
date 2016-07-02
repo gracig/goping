@@ -40,16 +40,24 @@ func TestTimeoutWithTwoContexts(t *testing.T) {
 
 	ctx := NewContext()
 	for i := 0; i < loop; i++ {
-		ping := Ping{Host: "localhost", Count: 10, Timeout: 300, Data: make(map[string]string)}
+		ping := Ping{Host: "localhost", IPVersion: IPV4, Count: 10, Timeout: 300, Data: make(map[string]string)}
 		ping.Data["id"] = fmt.Sprintf("%5d", i)
-		Add(ping, ctx)
+		err := Add(ping, ctx)
+		if err != nil {
+			t.Errorf("Got an error while testing. please fix the test: %v", err)
+			return
+		}
 	}
 
 	ctx2 := NewContext()
 	for i := 0; i < loop; i++ {
-		ping := Ping{Host: "localhost", Count: 10, Timeout: 300, Data: make(map[string]string)}
+		ping := Ping{Host: "localhost", IPVersion: IPV4, Count: 10, Timeout: 300, Data: make(map[string]string)}
 		ping.Data["id2"] = fmt.Sprintf("%5d", i)
-		Add(ping, ctx2)
+		err := Add(ping, ctx2)
+		if err != nil {
+			t.Errorf("Got an error while testing. please fix the test: %v", err)
+			return
+		}
 	}
 
 	done := make(chan struct{})
