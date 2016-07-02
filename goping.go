@@ -1,38 +1,45 @@
 package goping
 
 import (
+	"fmt"
 	"math"
+	"net"
 	"sync"
 	"time"
 
 	"github.com/gracig/goshared/log"
+	"golang.org/x/net/icmp"
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 )
 
 const (
 	//IPV4 is the ip version to choose in the Ping.IPVersion field
-	IPV4 = iota
-	//IPV6 is the ip version to choose in the Ping.IPVersion field
-	IPV6
+	IPV4 = 4
 	//ICMP is the IP Protocol to choose in the Ping.IPProto field
-	ICMP
-	//UDP is the IP Protocol to choose in the Ping.IPProto field
-	UDP
-	//TCP is the IP Protocol to choose in the Ping.IPProto field
-	TCP
+	ICMP = 1
 	//MAXSEQUENCE is the max number of the ICMP sequence field
 	MAXSEQUENCE = 65536
 )
 
 //Ping is the ICMP Request to be done
 type Ping struct {
-	IPVersion uint
-	IPProto   uint
-	Data      map[string]string
+	/*Control */
 	Host      string
 	Timeout   uint
 	Interval  uint
 	Count     uint
+	Data      map[string]string
+	IPVersion uint
+	IPProto   uint
 
+	/* Protocol */
+	IP          *net.IPAddr
+	IPV4Header  ipv4.Header
+	IPV6Header  ipv6.Header
+	ICMPMessage icmp.Message
+
+	/*Statistics*/
 	Sent   float64
 	Recv   float64
 	Failed float64
@@ -45,12 +52,15 @@ type Ping struct {
 
 //Pong is the response for each Ping.
 type Pong struct {
-	Seq         uint
-	Size        uint
-	RTT         float64
-	ICMPType    uint
-	ICMPSubtype uint
-	Timedout    bool
+	Seq  uint
+	Size uint
+	RTT  float64
+
+	Timedout bool
+
+	IPV4Header  ipv4.Header
+	IPV6Header  ipv6.Header
+	ICMPMessage icmp.Message
 }
 
 //Response is the object passed to the use everytime a pong is received. When is the last response, Done = true
@@ -107,6 +117,19 @@ func NewContext() Context {
 //	//Consumes the response
 //}
 func Add(ping Ping, ctx Context) error {
+
+	var err error
+
+	//Resolves the IP Address
+	if ping.IPVersion == IPV4 {
+		ping.IP, err = net.ResolveIPAddr("ip4", ping.Host)
+		if err != nil {
+			return fmt.Errorf("Could not resolve address: %s\n", ping.Host)
+		}
+	} else {
+		return fmt.Errorf("Only IPVersion=IPV4 is supported right now!")
+	}
+
 	ping.ctx = ctx
 	chPing <- ping
 	return nil
