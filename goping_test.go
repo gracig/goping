@@ -9,8 +9,8 @@ import (
 )
 
 func TestPauseResume(t *testing.T) {
-	go Run()
-	loop := 1000
+	Run()
+	loop := 10
 
 	rand.Seed(1)
 	var wg sync.WaitGroup
@@ -29,46 +29,55 @@ func TestPauseResume(t *testing.T) {
 			wg.Done()
 		}
 	}()
-
 	wg.Wait()
 
+	Resume() //In case we are paused, this unblocks the main loop
 }
 
 func TestTimeoutWithTwoContexts(t *testing.T) {
-	go Run()
+	Run()
+	loop := 1000
 
 	ctx := NewContext()
-	for i := 0; i < 1000; i++ {
-		ping := Ping{Host: "localhost", Count: 10, Timeout: 3000, Data: make(map[string]string)}
+	for i := 0; i < loop; i++ {
+		ping := Ping{Host: "localhost", Count: 10, Timeout: 300, Data: make(map[string]string)}
 		ping.Data["id"] = fmt.Sprintf("%5d", i)
 		Add(ping, ctx)
 	}
 
 	ctx2 := NewContext()
-	for i := 0; i < 1000; i++ {
-		ping := Ping{Host: "localhost", Count: 10, Timeout: 3000, Data: make(map[string]string)}
+	for i := 0; i < loop; i++ {
+		ping := Ping{Host: "localhost", Count: 10, Timeout: 300, Data: make(map[string]string)}
 		ping.Data["id2"] = fmt.Sprintf("%5d", i)
 		Add(ping, ctx2)
 	}
 
 	done := make(chan struct{})
 	go func() {
-		for pp := range ctx.PingPongChannel() {
+		var counter int
+		for pp := range ctx.RecvChannel() {
 			if pp.Done {
-				t.Logf("Received pp %v %v\n", pp, pp.Data)
+				counter++
 			}
 		}
 		done <- struct{}{}
+		if counter != loop {
+			t.Errorf("Expecting %v responses but got %v", loop, counter)
+		}
 	}()
 
 	done2 := make(chan struct{})
 	go func() {
-		for pp := range ctx2.PingPongChannel() {
+		var counter int
+		for pp := range ctx2.RecvChannel() {
 			if pp.Done {
-				t.Logf("Received pp %v %v\n", pp, pp.Data)
+				counter++
 			}
 		}
 		done2 <- struct{}{}
+		if counter != loop {
+			t.Errorf("Expecting %v responses but got %v", loop, counter)
+		}
 	}()
 
 	timer := time.NewTimer(time.Second * 60)
@@ -82,7 +91,5 @@ func TestTimeoutWithTwoContexts(t *testing.T) {
 	case <-timer.C:
 		t.Error("Timeout took too long, something is wrong")
 	}
-
-	t.Logf("Pings Sent: %d", seq)
 
 }

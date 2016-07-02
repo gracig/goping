@@ -3,7 +3,6 @@ package goping
 import (
 	"math"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gracig/goshared/log"
@@ -44,7 +43,7 @@ type Ping struct {
 	ctx Context
 }
 
-//Pong is the rsponse for each Ping.
+//Pong is the response for each Ping.
 type Pong struct {
 	Seq         uint
 	Size        uint
@@ -54,202 +53,173 @@ type Pong struct {
 	Timedout    bool
 }
 
-//PingPong is the object passed to the use everytime a pong is received. When is the last response, Done = true
-type PingPong struct {
+//Response is the object passed to the use everytime a pong is received. When is the last response, Done = true
+type Response struct {
 	Ping
 	Pong
 	Done bool
 }
 
 //Context is the interface to be used in this library.
-//PingPongChannel as are used inside contexts, this allow the library to be used concurrently
+//ResponseChannel as are used inside contexts, this allow the library to be used concurrently
 type Context interface {
-	//Channel where the PingPong objects will be sent
-	PingPongChannel() <-chan PingPong
-	//Internal function
-	pingPongChannel() chan PingPong
-	//Internal function
-	addPing(delta int32)
-	//Internal function
-	pingCount() int32
+	//Channel where the Response objects will be sent
+	RecvChannel() <-chan Response
+
+	//Internal pingpong channge
+	sendChannel() chan<- Response
 }
 
 //Implements the context interface
 type context struct {
-	chpp  chan PingPong
-	count int32
-	sync.Mutex
+	channel chan Response
 }
 
-func (c *context) PingPongChannel() <-chan PingPong {
-	return c.chpp
+func (c context) RecvChannel() <-chan Response {
+	return c.channel
 }
-func (c *context) pingPongChannel() chan PingPong {
-	return c.chpp
-}
-func (c *context) addPing(delta int32) {
-	atomic.AddInt32(&c.count, delta)
-}
-func (c *context) pingCount() int32 {
-	return atomic.LoadInt32(&c.count)
-}
-
-//NewContext Creates a new Contet to be used in the Add function
-func NewContext() Context {
-	return &context{
-		chpp: make(chan PingPong),
-	}
-}
-
-//Used to control the main loop execution at the Run function
-type control struct {
-	paused bool
-	sync.Mutex
+func (c context) sendChannel() chan<- Response {
+	return c.channel
 }
 
 var (
-	//Channels to control
-	chPing   = make(chan Ping)
-	chPong   = make(chan Pong)
-	chPause  = make(chan struct{})
-	chResume = make(chan struct{})
-	chDone   = make(chan struct{})
-	ctrl     = control{paused: false}
-	seq      uint64
+	chPing   = make(chan Ping)     //Receives ICMP requests
+	chPong   = make(chan Pong)     //Receives ICMP Responses
+	chPause  = make(chan struct{}) //Receives Pause commands
+	chResume = make(chan struct{}) //Receives Resume commands
+	ctrl     = struct {            //Status of mainLoop. Also mutex for status change synchronization
+		paused  bool
+		running bool
+		sync.Mutex
+	}{paused: false, running: false}
 )
 
-//Add Adds a new ping job to be done. The context  should be passed returns errors if ping  is invalid
+//NewContext Creates a new Context to be used inside Add().
+func NewContext() Context {
+	return context{
+		channel: make(chan Response),
+	}
+}
+
+//Add Adds a new ping job to be done. The context can be obtained by the NewContext() function
+//The Context contains the Response channel and must be read in a for range as soon as possible to avoid goroutine contention
+//for resp := range Context.RecvChannel(){
+//	//Consumes the response
+//}
 func Add(ping Ping, ctx Context) error {
 	ping.ctx = ctx
 	chPing <- ping
 	return nil
 }
 
-//Run executes the main loop. coordinates all the pings and pongs, and timeouts, and pause and resume
-func Run() {
-	//Work with all states inside this function
-
-	var recvchans = make([]chan Pong, MAXSEQUENCE, MAXSEQUENCE)
-
-	for {
-		select {
-
-		case ping := <-chPing:
-			log.Debug.Println("Called Ping")
-
-			//Verifies if the number of sent pings is less then the number of pings we need to send
-			if uint(ping.Sent) < ping.Count {
-
-				//If it is the first ping, adding context count
-				if ping.Sent == 0 {
-					ping.ctx.addPing(1)
-				}
-
-				//Prepare Ping
-				sequence := atomic.AddUint64(&seq, 1) % MAXSEQUENCE
-				if recvchans[sequence] != nil {
-					close(recvchans[sequence])
-					recvchans[sequence] = nil
-				}
-				recvchans[sequence] = make(chan Pong, 1) //The number avoid the channel to hold state
-
-				//Make a ping
-				ping.Sent++
-
-				//Wait a response
-				go func(sequence uint64, ping Ping, chrecv chan Pong) {
-
-					//Creates the timer to implement the ping.Interval field
-					wait := time.NewTimer(time.Millisecond * time.Duration(ping.Interval))
-
-					//Wait for a Pong or times out
-					var pong Pong
-					tout := time.NewTimer(time.Millisecond * time.Duration(ping.Timeout))
-					select {
-					case <-tout.C:
-						pong = Pong{
-							Seq:      uint(sequence),
-							RTT:      math.NaN(),
-							Timedout: true,
-						}
-						if log.DebugEnabled {
-							log.Debug.Printf("Timed out: %v %v", ping, pong)
-						}
-					case pong = <-chrecv:
-					}
-
-					//Send Ping Pong to user in a goroutine to not block function
-					ping.ctx.pingPongChannel() <- PingPong{ping, pong, false}
-
-					//Waits interval time
-					<-wait.C
-
-					//Send ping back to ping channel
-					chPing <- ping
-
-				}(sequence, ping, recvchans[sequence])
-
-			} else {
-
-				//Sends the last PingPong, with a zero value Pong and the field Done as true
-				ping.ctx.pingPongChannel() <- PingPong{ping, Pong{}, true}
-
-				//Decrement the ping counter
-				ping.ctx.addPing(-1)
-
-				//Verifies if ping counter is equals zero. this indicates that the pingpongchannel should be closed
-				if ping.ctx.pingCount() == 0 {
-					close(ping.ctx.pingPongChannel())
-				}
-
-				//Verifies if ping counter is less than zero, this is an abnormal situation
-				if ping.ctx.pingCount() < 0 {
-					log.Severe.Fatalln("pingCount cannot be, never, less than zero. something is very wrong")
-				}
-
-			}
-
-		case <-chPong:
-			if log.DebugEnabled {
-				log.Debug.Printf("Called pong\n")
-			}
-		case <-chPause:
-			if log.DebugEnabled {
-				log.Debug.Printf("Called Pause\n")
-			}
-
-			<-chResume
-			if log.DebugEnabled {
-				log.Debug.Printf("Called Resume\n")
-			}
-		case <-chDone:
-			//Finalize and exit
-		}
-	}
-}
-
-//Pause pauses the main execution
+//Pause pauses the main loop forever.
+//All ping requests and Pong responses are no longer processed . Even timeouts
+//One should call Reume() to continue the main loop operation
 func Pause() {
 	ctrl.Lock()
 	defer ctrl.Unlock()
 	if !ctrl.paused {
 		chPause <- struct{}{}
 		ctrl.paused = true
-		log.Debug.Println("goping was succesfully paused")
+		log.Info.Println("goping was succesfully paused")
 	} else {
-		log.Debug.Println("You requested to pause  an already paused goping")
+		log.Warn.Println("You requested to pause  an already paused goping")
 	}
 }
 
-//Resume resumes the pause command
+//Resume resumes the main loop, if it is paused.
 func Resume() {
 	ctrl.Lock()
 	defer ctrl.Unlock()
 	if ctrl.paused {
 		chResume <- struct{}{}
 		ctrl.paused = false
-		log.Debug.Println("go ping was succesfully resumed")
+		log.Info.Println("goping was succesfully resumed")
 	} else {
-		log.Debug.Println("You requested to resume a non paused goping")
+		log.Warn.Println("You requested to resume a non paused goping")
+	}
+}
+
+//Run executes the main loop, exactly once.  It is called at init()
+func Run() {
+	ctrl.Lock()
+	defer ctrl.Unlock()
+	if !ctrl.running {
+		ctrl.running = true
+		go mainLoop()
+	}
+}
+
+//mainLoop controls the schedule of ICMP requests (pings) and ICMP responses (pongs). And leads with timeouts
+func mainLoop() {
+
+	var (
+		//Maps the ICMP sequence field with a Pong channel. It is set in chPing and read in chPong.
+		recvchans = make([]chan Pong, MAXSEQUENCE, MAXSEQUENCE)
+		//ctxPingCounter is a map used to control if response channel should be closed after  a Ping request is Done
+		ctxPingCounter = make(map[<-chan Response]uint64)
+		//totalPings counts the number of pings that have been sent from this engine
+		totalPings uint64
+	)
+
+	//The main loop starts here
+	for {
+		select {
+		case ping := <-chPing:
+			//Incrementing context counter if first ping
+			if ping.Sent == 0 {
+				ctxPingCounter[ping.ctx.RecvChannel()]++
+			}
+			//Sending the Done Response when number of ping.Sent is equals the number of ping.Count
+			if uint(ping.Sent) >= ping.Count {
+				ping.ctx.sendChannel() <- Response{ping, Pong{}, true}
+				//Closing the channel if no ping requests is left on the given context.
+				ctxPingCounter[ping.ctx.RecvChannel()]--         //Decrements the context Ping Counter
+				if ctxPingCounter[ping.ctx.RecvChannel()] <= 0 { //If counter is <= 0 then we should close the channel on context
+					delete(ctxPingCounter, ping.ctx.RecvChannel()) //Deleting the map key.
+					close(ping.ctx.sendChannel())                  //Closing the channel on context
+				}
+			} else {
+				//Incrementing ping counters
+				totalPings++
+				ping.Sent++
+				//Creating ICMP sequence and Pong channel. associating them in recvchans
+				sequence := totalPings % MAXSEQUENCE
+				if recvchans[sequence] != nil {
+					close(recvchans[sequence])
+					recvchans[sequence] = nil
+				}
+				recvchans[sequence] = make(chan Pong, 1)
+				//Create and send PingRequest
+
+				//Wait for a response, timeout if necessary and waits interval after send itself to chping channel
+				go func(sequence uint64, ping Ping, chrecv chan Pong) {
+					var pong Pong
+					wait := time.NewTimer(time.Millisecond * time.Duration(ping.Interval))
+					tout := time.NewTimer(time.Millisecond * time.Duration(ping.Timeout))
+					select {
+					case <-tout.C:
+						//Create a timeout Pong
+						pong = Pong{
+							Seq:      uint(sequence),
+							RTT:      math.NaN(),
+							Timedout: true,
+						}
+					case pong = <-chrecv: //Received Pong
+					}
+					ping.ctx.sendChannel() <- Response{ping, pong, false} //Send Response to context channel. Done is false
+					<-wait.C                                              //Waits for the interval
+					chPing <- ping                                        //Continue Ping operation
+				}(sequence, ping, recvchans[sequence])
+			}
+		case pong := <-chPong: //Receiving ICMP Response
+			if recvchans[pong.Seq] != nil {
+				recvchans[pong.Seq] <- pong
+				close(recvchans[pong.Seq])
+				recvchans[pong.Seq] = nil
+			}
+		case <-chPause:
+			<-chResume //Blocks until a resume command is received
+		}
 	}
 }
