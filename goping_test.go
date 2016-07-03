@@ -37,33 +37,25 @@ func TestPauseResume(t *testing.T) {
 func TestTimeoutWithTwoContexts(t *testing.T) {
 	Run()
 	loop := 1000
+	gp := New()
 
-	ctx := NewContext()
 	for i := 0; i < loop; i++ {
 		ping := Ping{Host: "localhost", IPVersion: IPV4, Count: 10, Timeout: 300, Data: make(map[string]string)}
 		ping.Data["id"] = fmt.Sprintf("%5d", i)
-		err := Add(ping, ctx)
-		if err != nil {
-			t.Errorf("Got an error while testing. please fix the test: %v", err)
-			return
-		}
+		gp.Send(ping)
 	}
 
-	ctx2 := NewContext()
+	gp2 := New()
 	for i := 0; i < loop; i++ {
 		ping := Ping{Host: "localhost", IPVersion: IPV4, Count: 10, Timeout: 300, Data: make(map[string]string)}
 		ping.Data["id2"] = fmt.Sprintf("%5d", i)
-		err := Add(ping, ctx2)
-		if err != nil {
-			t.Errorf("Got an error while testing. please fix the test: %v", err)
-			return
-		}
+		gp2.Send(ping)
 	}
 
 	done := make(chan struct{})
 	go func() {
 		var counter int
-		for pp := range ctx.RecvChannel() {
+		for pp := range gp.PongChan() {
 			if pp.Done {
 				counter++
 			}
@@ -77,7 +69,7 @@ func TestTimeoutWithTwoContexts(t *testing.T) {
 	done2 := make(chan struct{})
 	go func() {
 		var counter int
-		for pp := range ctx2.RecvChannel() {
+		for pp := range gp2.PongChan() {
 			if pp.Done {
 				counter++
 			}
@@ -113,43 +105,6 @@ func TestValidAddress(t *testing.T) {
 		{gvnIPV: IPV4, gvnHost: "_de-fsdxs", expError: true},
 		{gvnIPV: IPV4, gvnHost: "localhost", expError: false, expIPAdd: "127.0.0.1", expIPNet: "ip"},
 	}
-	Run()
+	_ = testData
 
-	ctx := NewContext()
-	expectmap := make(map[string]struct {
-		expIPNet string
-		expIPAdd string
-	})
-	for _, test := range testData {
-		ping := Ping{Host: test.gvnHost, IPVersion: test.gvnIPV}
-		err := Add(ping, ctx)
-		if test.expError {
-			if err == nil {
-				t.Errorf("Expected error=%v but got error=%v", test.expError, err != nil)
-			}
-		} else {
-			s := expectmap[test.gvnHost]
-			s.expIPNet = test.expIPNet
-			s.expIPAdd = test.expIPAdd
-			expectmap[test.gvnHost] = s
-		}
-	}
-	for r := range ctx.RecvChannel() {
-		exp := expectmap[r.Host].expIPNet
-		rcv := r.IP.Network()
-		if exp != rcv {
-			t.Errorf("Hostname %v expected NET to be %v but got %v", r.Host, exp, rcv)
-		}
-
-		exp = expectmap[r.Host].expIPAdd
-		rcv = r.IP.String()
-		if exp != rcv {
-			t.Errorf("Hostname %v expected IP to be %v but got %v", r.Host, exp, rcv)
-		}
-
-		delete(expectmap, r.Host)
-	}
-	if len(expectmap) > 0 {
-		t.Errorf("Not all ips were processed %v", expectmap)
-	}
 }

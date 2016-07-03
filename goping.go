@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gracig/goshared/log"
 	"golang.org/x/net/icmp"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
@@ -47,7 +46,7 @@ type Ping struct {
 	MaxRtt float64
 	MinRtt float64
 
-	ctx Context
+	pinger Pinger
 }
 
 //Pong is the response for each Ping.
@@ -56,7 +55,7 @@ type Pong struct {
 	Size uint
 	RTT  float64
 
-	Timedout bool
+	Err error
 
 	IPV4Header  ipv4.Header
 	IPV6Header  ipv6.Header
@@ -70,26 +69,33 @@ type Response struct {
 	Done bool
 }
 
-//Context is the interface to be used in this library.
-//ResponseChannel as are used inside contexts, this allow the library to be used concurrently
-type Context interface {
-	//Channel where the Response objects will be sent
-	RecvChannel() <-chan Response
+//GoPinger is the interface that
+type Pinger interface {
+	//Ping sends the Ping struct to the mainLoop through the chPing channel
+	Send(p Ping)
 
-	//Internal pingpong channge
-	sendChannel() chan<- Response
+	//Pong receives responses from the mainLoop
+	PongChan() <-chan Response
+
+	//pong used by the mainLoop to send the responses
+	pongChan() chan<- Response
 }
 
 //Implements the context interface
-type context struct {
-	channel chan Response
+type pinger struct {
+	pongch chan Response
 }
 
-func (c context) RecvChannel() <-chan Response {
-	return c.channel
+func (p pinger) Send(ping Ping) {
+	ping.pinger = p
+	chPing <- ping
 }
-func (c context) sendChannel() chan<- Response {
-	return c.channel
+
+func (p pinger) PongChan() <-chan Response {
+	return p.pongch
+}
+func (p pinger) pongChan() chan<- Response {
+	return p.pongch
 }
 
 var (
@@ -104,37 +110,32 @@ var (
 	}{paused: false, running: false}
 )
 
-//NewContext Creates a new Context to be used inside Add().
-func NewContext() Context {
-	return context{
-		channel: make(chan Response),
+//New Creates a new Pinger.
+func New() Pinger {
+	return pinger{
+		pongch: make(chan Response),
 	}
 }
 
-//Add Adds a new ping job to be done. The context can be obtained by the NewContext() function
-//The Context contains the Response channel and must be read in a for range as soon as possible to avoid goroutine contention
-//for resp := range Context.RecvChannel(){
-//	//Consumes the response
-//}
-func Add(ping Ping, ctx Context) error {
+/*
+func addPing(ping Ping) error {
 
 	var err error
-
-	//Resolves the IP Address
-	if ping.IPVersion == IPV4 {
-		ping.IP, err = net.ResolveIPAddr("ip4", ping.Host)
-		if err != nil {
-			return fmt.Errorf("Could not resolve address: %s\n", ping.Host)
+		//Resolves the IP Address
+		if ping.IPVersion == IPV4 {
+			ping.IP, err = net.ResolveIPAddr("ip4", ping.Host)
+			if err != nil {
+				return fmt.Errorf("Could not resolve address: %s\n", ping.Host)
+			}
+		} else {
+			return fmt.Errorf("Only IPVersion=IPV4 is supported right now!")
 		}
-	} else {
-		return fmt.Errorf("Only IPVersion=IPV4 is supported right now!")
-	}
-
 	ping.ctx = ctx
 	chPing <- ping
 	return nil
 }
 
+*/
 //Pause pauses the main loop forever.
 //All ping requests and Pong responses are no longer processed . Even timeouts
 //One should call Reume() to continue the main loop operation
@@ -144,9 +145,6 @@ func Pause() {
 	if !ctrl.paused {
 		chPause <- struct{}{}
 		ctrl.paused = true
-		log.Info.Println("goping was succesfully paused")
-	} else {
-		log.Warn.Println("You requested to pause  an already paused goping")
 	}
 }
 
@@ -157,9 +155,6 @@ func Resume() {
 	if ctrl.paused {
 		chResume <- struct{}{}
 		ctrl.paused = false
-		log.Info.Println("goping was succesfully resumed")
-	} else {
-		log.Warn.Println("You requested to resume a non paused goping")
 	}
 }
 
@@ -191,16 +186,27 @@ func mainLoop() {
 		case ping := <-chPing:
 			//Incrementing context counter if first ping
 			if ping.Sent == 0 {
-				ctxPingCounter[ping.ctx.RecvChannel()]++
+				ctxPingCounter[ping.pinger.PongChan()]++
+				//Validates ping object
+				/*
+					if ping.IPVersion == IPV4 {
+						ping.IP, err = net.ResolveIPAddr("ip4", ping.Host)
+						if err != nil {
+							return fmt.Errorf("Could not resolve address: %s\n", ping.Host)
+						}
+					} else {
+						return fmt.Errorf("Only IPVersion=IPV4 is supported right now!")
+					}
+				*/
 			}
 			//Sending the Done Response when number of ping.Sent is equals the number of ping.Count
 			if uint(ping.Sent) >= ping.Count {
-				ping.ctx.sendChannel() <- Response{ping, Pong{}, true}
+				ping.pinger.pongChan() <- Response{ping, Pong{}, true}
 				//Closing the channel if no ping requests is left on the given context.
-				ctxPingCounter[ping.ctx.RecvChannel()]--         //Decrements the context Ping Counter
-				if ctxPingCounter[ping.ctx.RecvChannel()] <= 0 { //If counter is <= 0 then we should close the channel on context
-					delete(ctxPingCounter, ping.ctx.RecvChannel()) //Deleting the map key.
-					close(ping.ctx.sendChannel())                  //Closing the channel on context
+				ctxPingCounter[ping.pinger.PongChan()]--
+				if ctxPingCounter[ping.pinger.PongChan()] <= 0 { //If counter is <= 0 then we should close the channel on context
+					delete(ctxPingCounter, ping.pinger.PongChan()) //Deleting the map key.
+					close(ping.pinger.pongChan())                  //Closing the channel on context
 				}
 			} else {
 				//Incrementing ping counters
@@ -224,13 +230,13 @@ func mainLoop() {
 					case <-tout.C:
 						//Create a timeout Pong
 						pong = Pong{
-							Seq:      uint(sequence),
-							RTT:      math.NaN(),
-							Timedout: true,
+							Seq: uint(sequence),
+							RTT: math.NaN(),
+							Err: fmt.Errorf("Timeout"),
 						}
 					case pong = <-chrecv: //Received Pong
 					}
-					ping.ctx.sendChannel() <- Response{ping, pong, false} //Send Response to context channel. Done is false
+					ping.pinger.pongChan() <- Response{ping, pong, false} //Send Response to context channel. Done is false
 					<-wait.C                                              //Waits for the interval
 					chPing <- ping                                        //Continue Ping operation
 				}(sequence, ping, recvchans[sequence])
