@@ -1,5 +1,0 @@
-vendors:
-- path: github.com/gracig/goshared
-  rev: 4231f617fa0a7e8887c1a2f2b56356061e4a85b0
-- path: golang.org/x/net
-  rev: b400c2eff1badec7022a8c8f5bea058b6315eed7
