@@ -1,21 +1,18 @@
 package goping
 
-import (
-	"net"
+import "net"
 
-	"golang.org/x/net/icmp"
-)
-
-type ICMPRequest interface {
-	//Protocol: The ip protocol to send the ip message  (ICMP=1, TCP=6, UDP=17)
-	Protocol() uint
-
-	//IP: The target address of this request
-	IP() net.IP
-
-	//The ICMP Message to send
-	Message() icmp.Message
+//NetResolver: Resolves a hostname to net.IP
+type NetResolver interface {
+	Resolve(net string, host string) (*net.IP, error)
 }
 
-type ICMPReply interface {
+type ICMPSender interface {
+	//Send: Receive the Ping Request and send over the network
+	//If any error, send a Poing object back describing the error
+	Send(ping Ping)
+}
+
+type ICMPSenderFactory interface {
+	GetICMPSender(ipVersion int, ipProto int)
 }

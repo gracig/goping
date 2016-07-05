@@ -3,7 +3,6 @@ package goping
 import (
 	"fmt"
 	"math"
-	"net"
 	"sync"
 	"time"
 
@@ -14,9 +13,9 @@ import (
 
 const (
 	//IPV4 is the ip version to choose in the Ping.IPVersion field
-	IPV4 = 4
+	IP4 = 4
 	//ICMP is the IP Protocol to choose in the Ping.IPProto field
-	ICMP = 1
+	ProtoICMP = 1
 	//MAXSEQUENCE is the max number of the ICMP sequence field
 	MAXSEQUENCE = 65536
 )
@@ -25,15 +24,15 @@ const (
 type Ping struct {
 	/*Control */
 	Host      string
-	Timeout   uint
-	Interval  uint
-	Count     uint
+	Timeout   int
+	Interval  int
+	Count     int
+	PcktSize  int
 	Data      map[string]string
-	IPVersion uint
-	IPProto   uint
+	IPVersion int
+	IPProto   int
 
 	/* Protocol */
-	IP          *net.IPAddr
 	IPV4Header  ipv4.Header
 	IPV6Header  ipv6.Header
 	ICMPMessage icmp.Message
@@ -51,12 +50,13 @@ type Ping struct {
 
 //Pong is the response for each Ping.
 type Pong struct {
-	Seq  uint
-	Size uint
-	RTT  float64
+	//RTT is the Round Trip Time of the packet
+	RTT float64
 
+	//Err is generated when packets weren't send
 	Err error
 
+	/* Protocol */
 	IPV4Header  ipv4.Header
 	IPV6Header  ipv6.Header
 	ICMPMessage icmp.Message
@@ -64,8 +64,8 @@ type Pong struct {
 
 //Response is the object passed to the use everytime a pong is received. When is the last response, Done = true
 type Response struct {
-	Ping
-	Pong
+	Ping Ping
+	Pong Pong
 	Done bool
 }
 
@@ -200,7 +200,7 @@ func mainLoop() {
 				*/
 			}
 			//Sending the Done Response when number of ping.Sent is equals the number of ping.Count
-			if uint(ping.Sent) >= ping.Count {
+			if int(ping.Sent) >= ping.Count {
 				ping.pinger.pongChan() <- Response{ping, Pong{}, true}
 				//Closing the channel if no ping requests is left on the given context.
 				ctxPingCounter[ping.pinger.PongChan()]--
@@ -230,7 +230,6 @@ func mainLoop() {
 					case <-tout.C:
 						//Create a timeout Pong
 						pong = Pong{
-							Seq: uint(sequence),
 							RTT: math.NaN(),
 							Err: fmt.Errorf("Timeout"),
 						}
@@ -242,11 +241,14 @@ func mainLoop() {
 				}(sequence, ping, recvchans[sequence])
 			}
 		case pong := <-chPong: //Receiving ICMP Response
+			_ = pong
+		/*
 			if recvchans[pong.Seq] != nil {
 				recvchans[pong.Seq] <- pong
 				close(recvchans[pong.Seq])
 				recvchans[pong.Seq] = nil
 			}
+		*/
 		case <-chPause:
 			<-chResume //Blocks until a resume command is received
 		}
