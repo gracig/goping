@@ -23,7 +23,6 @@ const (
 //Ping is the ICMP Request to be done
 type Ping struct {
 	/*Control */
-	Host      string
 	Timeout   int
 	Interval  int
 	Count     int
@@ -88,17 +87,17 @@ type pinger struct {
 	wg sync.WaitGroup
 }
 type pingPinger struct {
-	pinger Pinger
+	pongch chan Response
 	ping   Ping
 }
 
-func (p pinger) PongChan() <-chan Response {
+func (p *pinger) PongChan() <-chan Response {
 	return p.Pongch
 }
 
 //New Creates a new Pinger.
 func New() Pinger {
-	return pinger{
+	return &pinger{
 		Pongch: make(chan Response),
 		pongch: make(chan Response),
 	}
@@ -126,27 +125,39 @@ var (
 		return fmt.Errorf("Only IPVersion=IPV4 is supported right now!")
 	}
 */
-func (p pinger) Send(ping Ping) {
+func (p *pinger) Send(ping Ping) {
 
-	if ping.Count >= 0 && int(ping.Sent) >= ping.Count {
-
-		//Sending the Done Response when number of ping.Sent is equals the number of ping.Count
-		p.Pongch <- Response{ping, Pong{}, true}
-
-		//Closing the channel if no ping requests is left on the given context.
-		ctxPingCounter[ping.pinger.PongChan()]--
-		if ctxPingCounter[ping.pinger.PongChan()] <= 0 { //If counter is <= 0 then we should close the channel on context
-			delete(ctxPingCounter, ping.pinger.PongChan()) //Deleting the map key.
-			close(ping.pinger.pongChan())                  //Closing the channel on context
+	p.wg.Add(1)
+	chPing <- pingPinger{p.pongch, ping}
+	go func(p *pinger, ping Ping) {
+		var r Response
+		wait := time.NewTimer(time.Millisecond * time.Duration(ping.Interval))
+		tout := time.NewTimer(time.Millisecond * time.Duration(ping.Timeout))
+		select {
+		case r = <-p.pongch:
+		case <-tout.C:
+			r.Ping = ping
+			r.Pong = Pong{
+				RTT: math.NaN(),
+				Err: fmt.Errorf("Timeout"),
+			}
 		}
-	} else {
-	}
+		//Send response to user
+		p.Pongch <- r
+		p.wg.Done()
 
-	chPing <- pingPinger{p, ping}
+		//If not Done, send another ping request
+		if !r.Done {
+			//Waits for the ping interval
+			<-wait.C
+			p.wg.Add(1)
+			chPing <- pingPinger{p.pongch, ping}
+		}
+	}(p, ping)
 }
 
 //mainLoop controls the schedule of ICMP requests (pings) and ICMP responses (pongs). And leads with timeouts
-func mainLoop() {
+func mainLoop(isf ICMPSenderFactory) {
 
 	var (
 		//totalPings counts the number of pings that have been sent from this engine
@@ -157,56 +168,22 @@ func mainLoop() {
 	for {
 		select {
 		case pp := <-chPing:
-			//Sending the Done Response when number of ping.Sent is equals the number of ping.Count
+
 			if pp.ping.Count >= 0 && int(pp.ping.Sent) >= pp.ping.Count {
-				ping.pinger.pongChan() <- Response{ping, Pong{}, true}
-				//Closing the channel if no ping requests is left on the given context.
-				ctxPingCounter[ping.pinger.PongChan()]--
-				if ctxPingCounter[ping.pinger.PongChan()] <= 0 { //If counter is <= 0 then we should close the channel on context
-					delete(ctxPingCounter, ping.pinger.PongChan()) //Deleting the map key.
-					close(ping.pinger.pongChan())                  //Closing the channel on context
-				}
+				//Sending the Done Response when number of ping.Sent is equals the number of ping.Count
+				pp.pongch <- Response{pp.ping, Pong{}, true}
 			} else {
 				//Incrementing ping counters
 				totalPings++
-				ping.Sent++
-				//Creating ICMP sequence and Pong channel. associating them in recvchans
-				sequence := totalPings % MAXSEQUENCE
-				if recvchans[sequence] != nil {
-					close(recvchans[sequence])
-					recvchans[sequence] = nil
-				}
-				recvchans[sequence] = make(chan Pong, 1)
-				//Create and send PingRequest
+				pp.ping.Sent++
 
-				//Wait for a response, timeout if necessary and waits interval after send itself to chping channel
-				go func(sequence uint64, ping Ping, chrecv chan Pong) {
-					var pong Pong
-					wait := time.NewTimer(time.Millisecond * time.Duration(ping.Interval))
-					tout := time.NewTimer(time.Millisecond * time.Duration(ping.Timeout))
-					select {
-					case <-tout.C:
-						//Create a timeout Pong
-						pong = Pong{
-							RTT: math.NaN(),
-							Err: fmt.Errorf("Timeout"),
-						}
-					case pong = <-chrecv: //Received Pong
-					}
-					ping.pinger.pongChan() <- Response{ping, pong, false} //Send Response to context channel. Done is false
-					<-wait.C                                              //Waits for the interval
-					chPing <- ping                                        //Continue Ping operation
-				}(sequence, ping, recvchans[sequence])
+				//Generating a sequence number based on the local counter totalPings
+				sequence := totalPings % MAXSEQUENCE
+				pp.ping.ICMPMessage.Body.(*icmp.Echo).Seq = int(sequence)
+
+				isf.GetICMPSender(pp.ping.IPVersion, pp.ping.IPProto)
 			}
-		case pong := <-chPong: //Receiving ICMP Response
-			_ = pong
-		/*
-			if recvchans[pong.Seq] != nil {
-				recvchans[pong.Seq] <- pong
-				close(recvchans[pong.Seq])
-				recvchans[pong.Seq] = nil
-			}
-		*/
+
 		case <-chPause:
 			<-chResume //Blocks until a resume command is received
 		}
@@ -236,11 +213,11 @@ func Resume() {
 }
 
 //Run executes the main loop, exactly once.  It is called at init()
-func Run() {
+func Run(isf ICMPSenderFactory) {
 	ctrl.Lock()
 	defer ctrl.Unlock()
 	if !ctrl.running {
 		ctrl.running = true
-		go mainLoop()
+		go mainLoop(isf)
 	}
 }
