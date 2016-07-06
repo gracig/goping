@@ -44,8 +44,6 @@ type Ping struct {
 	AvgRtt float64
 	MaxRtt float64
 	MinRtt float64
-
-	pinger Pinger
 }
 
 //Pong is the response for each Ping.
@@ -76,106 +74,81 @@ type Pinger interface {
 
 	//Pong receives responses from the mainLoop
 	PongChan() <-chan Response
-
-	//pong used by the mainLoop to send the responses
-	pongChan() chan<- Response
 }
 
 //Implements the context interface
 type pinger struct {
-	pongch chan Response
-}
+	//Channel to send responses to the package User
+	Pongch chan Response
 
-func (p pinger) Send(ping Ping) {
-	ping.pinger = p
-	chPing <- ping
+	//Channel to receive responses from underlying ICMP Sender
+	pongch chan Response
+
+	//WaitGroup
+	wg sync.WaitGroup
+}
+type pingPinger struct {
+	pinger Pinger
+	ping   Ping
 }
 
 func (p pinger) PongChan() <-chan Response {
-	return p.pongch
+	return p.Pongch
 }
-func (p pinger) pongChan() chan<- Response {
-	return p.pongch
+
+//New Creates a new Pinger.
+func New() Pinger {
+	return pinger{
+		Pongch: make(chan Response),
+		pongch: make(chan Response),
+	}
 }
 
 var (
-	chPing   = make(chan Ping)     //Receives ICMP requests
-	chPong   = make(chan Pong)     //Receives ICMP Responses
-	chPause  = make(chan struct{}) //Receives Pause commands
-	chResume = make(chan struct{}) //Receives Resume commands
-	ctrl     = struct {            //Status of mainLoop. Also mutex for status change synchronization
+	chPing   = make(chan pingPinger) //Receives ICMP requests
+	chPong   = make(chan Pong)       //Receives ICMP Responses
+	chPause  = make(chan struct{})   //Receives Pause commands
+	chResume = make(chan struct{})   //Receives Resume commands
+	ctrl     = struct {              //Status of mainLoop. Also mutex for status change synchronization
 		paused  bool
 		running bool
 		sync.Mutex
 	}{paused: false, running: false}
 )
 
-//New Creates a new Pinger.
-func New() Pinger {
-	return pinger{
-		pongch: make(chan Response),
-	}
-}
-
 /*
-func addPing(ping Ping) error {
-
-	var err error
-		//Resolves the IP Address
-		if ping.IPVersion == IPV4 {
-			ping.IP, err = net.ResolveIPAddr("ip4", ping.Host)
-			if err != nil {
-				return fmt.Errorf("Could not resolve address: %s\n", ping.Host)
-			}
-		} else {
-			return fmt.Errorf("Only IPVersion=IPV4 is supported right now!")
+	if ping.IPVersion == IPV4 {
+		ping.IP, err = net.ResolveIPAddr("ip4", ping.Host)
+		if err != nil {
+			return fmt.Errorf("Could not resolve address: %s\n", ping.Host)
 		}
-	ping.ctx = ctx
-	chPing <- ping
-	return nil
-}
-
+	} else {
+		return fmt.Errorf("Only IPVersion=IPV4 is supported right now!")
+	}
 */
-//Pause pauses the main loop forever.
-//All ping requests and Pong responses are no longer processed . Even timeouts
-//One should call Reume() to continue the main loop operation
-func Pause() {
-	ctrl.Lock()
-	defer ctrl.Unlock()
-	if !ctrl.paused {
-		chPause <- struct{}{}
-		ctrl.paused = true
-	}
-}
+func (p pinger) Send(ping Ping) {
 
-//Resume resumes the main loop, if it is paused.
-func Resume() {
-	ctrl.Lock()
-	defer ctrl.Unlock()
-	if ctrl.paused {
-		chResume <- struct{}{}
-		ctrl.paused = false
-	}
-}
+	if ping.Count >= 0 && int(ping.Sent) >= ping.Count {
 
-//Run executes the main loop, exactly once.  It is called at init()
-func Run() {
-	ctrl.Lock()
-	defer ctrl.Unlock()
-	if !ctrl.running {
-		ctrl.running = true
-		go mainLoop()
+		//Sending the Done Response when number of ping.Sent is equals the number of ping.Count
+		p.Pongch <- Response{ping, Pong{}, true}
+
+		//Closing the channel if no ping requests is left on the given context.
+		ctxPingCounter[ping.pinger.PongChan()]--
+		if ctxPingCounter[ping.pinger.PongChan()] <= 0 { //If counter is <= 0 then we should close the channel on context
+			delete(ctxPingCounter, ping.pinger.PongChan()) //Deleting the map key.
+			close(ping.pinger.pongChan())                  //Closing the channel on context
+		}
+	} else {
 	}
+
+	chPing <- pingPinger{p, ping}
 }
 
 //mainLoop controls the schedule of ICMP requests (pings) and ICMP responses (pongs). And leads with timeouts
 func mainLoop() {
 
 	var (
-		//Maps the ICMP sequence field with a Pong channel. It is set in chPing and read in chPong.
-		recvchans = make([]chan Pong, MAXSEQUENCE, MAXSEQUENCE)
-		//ctxPingCounter is a map used to control if response channel should be closed after  a Ping request is Done
-		ctxPingCounter = make(map[<-chan Response]uint64)
 		//totalPings counts the number of pings that have been sent from this engine
 		totalPings uint64
 	)
@@ -183,24 +156,9 @@ func mainLoop() {
 	//The main loop starts here
 	for {
 		select {
-		case ping := <-chPing:
-			//Incrementing context counter if first ping
-			if ping.Sent == 0 {
-				ctxPingCounter[ping.pinger.PongChan()]++
-				//Validates ping object
-				/*
-					if ping.IPVersion == IPV4 {
-						ping.IP, err = net.ResolveIPAddr("ip4", ping.Host)
-						if err != nil {
-							return fmt.Errorf("Could not resolve address: %s\n", ping.Host)
-						}
-					} else {
-						return fmt.Errorf("Only IPVersion=IPV4 is supported right now!")
-					}
-				*/
-			}
+		case pp := <-chPing:
 			//Sending the Done Response when number of ping.Sent is equals the number of ping.Count
-			if int(ping.Sent) >= ping.Count {
+			if pp.ping.Count >= 0 && int(pp.ping.Sent) >= pp.ping.Count {
 				ping.pinger.pongChan() <- Response{ping, Pong{}, true}
 				//Closing the channel if no ping requests is left on the given context.
 				ctxPingCounter[ping.pinger.PongChan()]--
@@ -252,5 +210,37 @@ func mainLoop() {
 		case <-chPause:
 			<-chResume //Blocks until a resume command is received
 		}
+	}
+}
+
+//Pause pauses the main loop forever.
+//All ping requests and Pong responses are no longer processed . Even timeouts
+//One should call Reume() to continue the main loop operation
+func Pause() {
+	ctrl.Lock()
+	defer ctrl.Unlock()
+	if !ctrl.paused {
+		chPause <- struct{}{}
+		ctrl.paused = true
+	}
+}
+
+//Resume resumes the main loop, if it is paused.
+func Resume() {
+	ctrl.Lock()
+	defer ctrl.Unlock()
+	if ctrl.paused {
+		chResume <- struct{}{}
+		ctrl.paused = false
+	}
+}
+
+//Run executes the main loop, exactly once.  It is called at init()
+func Run() {
+	ctrl.Lock()
+	defer ctrl.Unlock()
+	if !ctrl.running {
+		ctrl.running = true
+		go mainLoop()
 	}
 }
