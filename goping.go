@@ -22,14 +22,8 @@ const (
 
 //Ping is the ICMP Request to be done
 type Ping struct {
-	/*Control */
-	Timeout   int
-	Interval  int
-	Count     int
-	PcktSize  int
-	Data      map[string]string
-	IPVersion int
-	IPProto   int
+	/*Config */
+	Config
 
 	/* Protocol */
 	IPV4Header  ipv4.Header
@@ -66,15 +60,6 @@ type Response struct {
 	Done bool
 }
 
-//GoPinger is the interface that
-type Pinger interface {
-	//Ping sends the Ping struct to the mainLoop through the chPing channel
-	Send(p Ping)
-
-	//Pong receives responses from the mainLoop
-	PongChan() <-chan Response
-}
-
 //Implements the context interface
 type pinger struct {
 	//Channel to send responses to the package User
@@ -95,14 +80,6 @@ func (p *pinger) PongChan() <-chan Response {
 	return p.Pongch
 }
 
-//New Creates a new Pinger.
-func New() Pinger {
-	return &pinger{
-		Pongch: make(chan Response),
-		pongch: make(chan Response),
-	}
-}
-
 var (
 	chPing   = make(chan pingPinger) //Receives ICMP requests
 	chPong   = make(chan Pong)       //Receives ICMP Responses
@@ -114,6 +91,10 @@ var (
 		sync.Mutex
 	}{paused: false, running: false}
 )
+
+func (p *pinger) Wait() {
+	p.wg.Wait()
+}
 
 /*
 	if ping.IPVersion == IPV4 {
@@ -127,8 +108,7 @@ var (
 */
 func (p *pinger) Send(ping Ping) {
 
-	p.wg.Add(1)
-	chPing <- pingPinger{p.pongch, ping}
+	//Start goroutine that waits for a ping response or timeouts
 	go func(p *pinger, ping Ping) {
 		var r Response
 		wait := time.NewTimer(time.Millisecond * time.Duration(ping.Interval))
@@ -142,18 +122,33 @@ func (p *pinger) Send(ping Ping) {
 				Err: fmt.Errorf("Timeout"),
 			}
 		}
-		//Send response to user
-		p.Pongch <- r
-		p.wg.Done()
+
+		//Send response to user in a go routine to avoid blocking
+		go func() {
+			p.Pongch <- r
+			p.wg.Done()
+		}()
 
 		//If not Done, send another ping request
 		if !r.Done {
 			//Waits for the ping interval
 			<-wait.C
-			p.wg.Add(1)
-			chPing <- pingPinger{p.pongch, ping}
+			//Calls p.Send
+			p.Send(ping)
 		}
 	}(p, ping)
+
+	p.wg.Add(1)
+	if ping.Count >= 0 && int(ping.Sent) >= ping.Count {
+		//Sending the Done Response when number of ping.Sent is equals the number of ping.Count
+		p.pongch <- Response{ping, Pong{}, true}
+	} else {
+		//Sanitize Ping
+
+		//If ping.Count <0 or Sent is Less than Count, send ping
+		ping.Sent++
+		chPing <- pingPinger{p.pongch, ping}
+	}
 }
 
 //mainLoop controls the schedule of ICMP requests (pings) and ICMP responses (pongs). And leads with timeouts
@@ -168,21 +163,14 @@ func mainLoop(isf ICMPSenderFactory) {
 	for {
 		select {
 		case pp := <-chPing:
+			//Incrementing ping counters
+			totalPings++
 
-			if pp.ping.Count >= 0 && int(pp.ping.Sent) >= pp.ping.Count {
-				//Sending the Done Response when number of ping.Sent is equals the number of ping.Count
-				pp.pongch <- Response{pp.ping, Pong{}, true}
-			} else {
-				//Incrementing ping counters
-				totalPings++
-				pp.ping.Sent++
+			//Generating a sequence number based on the local counter totalPings
+			sequence := totalPings % MAXSEQUENCE
+			pp.ping.ICMPMessage.Body.(*icmp.Echo).Seq = int(sequence)
 
-				//Generating a sequence number based on the local counter totalPings
-				sequence := totalPings % MAXSEQUENCE
-				pp.ping.ICMPMessage.Body.(*icmp.Echo).Seq = int(sequence)
-
-				isf.GetICMPSender(pp.ping.IPVersion, pp.ping.IPProto)
-			}
+			isf.GetICMPSender(pp.ping.IPVersion, pp.ping.IPProto)
 
 		case <-chPause:
 			<-chResume //Blocks until a resume command is received
