@@ -12,6 +12,11 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+/*** Errors ***/
+var (
+	ErrTimeout = errors.New("Timeout")
+)
+
 /*** Structures ***/
 
 //Config is the configures a GoPing object
@@ -147,7 +152,7 @@ func (g *goping) Start() (chan<- Request, <-chan Response) {
 						timeout := time.After(recv.Config.Timeout)
 						select {
 						case <-timeout:
-							resp.Err = errors.New("Timeout")
+							resp.Err = ErrTimeout
 						case r := <-future:
 							resp.RawResponse = r
 							switch r.ICMPMessage.Type {
