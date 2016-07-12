@@ -4,13 +4,9 @@ import (
 	"errors"
 	"math"
 	"net"
-	"os"
 	"strconv"
 	"testing"
 	"time"
-
-	"golang.org/x/net/icmp"
-	"golang.org/x/net/ipv4"
 )
 
 type mockLogger struct {
@@ -36,7 +32,7 @@ func (l mockLogger) Debug(fmt string, v ...interface{}) {
 
 func TestNewRequest(t *testing.T) {
 	cfg := Config{Count: 1, Interval: time.Duration(1 * time.Second), PacketSize: 56, TOS: 16, TTL: 64, Timeout: (3 * time.Second)}
-	g := New(cfg, &mockLogger{}, &mockPinger{})
+	g := New(cfg, &mockLogger{}, &mockPinger{}, &mockSeqGen{})
 
 	for i := 0; i < 100; i++ {
 		req := g.NewRequest("hostname", map[string]string{"id": "1"})
@@ -82,14 +78,20 @@ type answer struct {
 	raw RawResponse
 }
 
+type mockSeqGen struct {
+	seqmap map[uint64]int
+}
+
+func (m *mockSeqGen) Next(r Request) int {
+	m.seqmap[r.Id]++
+	return m.seqmap[r.Id] + int(r.Id)*1000
+}
+
 type mockPinger struct {
-	seqmap  map[uint64]int
 	answers map[int]answer
 }
 
-func (m *mockPinger) Ping(r Request) (future <-chan RawResponse, seq int, err error) {
-	m.seqmap[r.Id]++
-	seq = m.seqmap[r.Id] + int(r.Id)*1000
+func (m *mockPinger) Ping(r Request, seq int) (future <-chan RawResponse, err error) {
 	f := make(chan RawResponse, 1)
 	future = f
 	err = m.answers[seq].err
@@ -116,42 +118,18 @@ const (
 	IPv4UNREACHABLE  = 4
 )
 
-func msg(t int, seq int) icmp.Message {
+func msg(t int, seq int) []byte {
 	switch t {
 	case IPv4ECHOREQUEST:
-		return icmp.Message{
-			Type: ipv4.ICMPTypeEcho,
-			Code: 0,
-			Body: &icmp.Echo{
-				ID:   os.Getpid() & 0xffff,
-				Seq:  seq,
-				Data: []byte("HELLO-R-U-THERE"),
-			},
-		}
+		return []byte{8}
 	case IPv4ECHOREPLY:
-		return icmp.Message{
-			Type: ipv4.ICMPTypeEchoReply,
-			Code: 0,
-			Body: &icmp.Echo{
-				ID:   os.Getpid() & 0xffff,
-				Seq:  seq,
-				Data: []byte("HELLO-R-U-THERE"),
-			},
-		}
+		return []byte{0}
 	case IPv4TIMEEXCEEDED:
-		return icmp.Message{
-			Type: ipv4.ICMPTypeTimeExceeded,
-			Code: 0,
-			Body: &icmp.TimeExceeded{},
-		}
+		return []byte{11}
 	case IPv4UNREACHABLE:
-		return icmp.Message{
-			Type: ipv4.ICMPTypeDestinationUnreachable,
-			Code: 0,
-			Body: &icmp.DstUnreach{},
-		}
+		return []byte{3}
 	default:
-		return icmp.Message{}
+		return []byte{0}
 	}
 }
 
@@ -159,47 +137,46 @@ func TestGopinger(t *testing.T) {
 	cfg := Config{Count: 10, Interval: time.Duration(500 * time.Millisecond), PacketSize: 56, TOS: 16, TTL: 64, Timeout: (500 * time.Millisecond)}
 
 	pinger := &mockPinger{
-		seqmap: make(map[uint64]int),
 		answers: map[int]answer{
-			1001: {err: nil, raw: RawResponse{RTT: dur(110), ICMPMessage: msg(IPv4ECHOREPLY, 1001), From: net.ParseIP("192.168.0.1")}},
-			1002: {err: nil, raw: RawResponse{RTT: dur(80), ICMPMessage: msg(IPv4ECHOREPLY, 1002), From: net.ParseIP("192.168.0.1")}},
-			1003: {err: nil, raw: RawResponse{RTT: dur(65), ICMPMessage: msg(IPv4ECHOREPLY, 1003), From: net.ParseIP("192.168.0.1")}},
-			1004: {err: nil, raw: RawResponse{RTT: dur(100), ICMPMessage: msg(IPv4ECHOREPLY, 1004), From: net.ParseIP("192.168.0.1")}},
-			1005: {err: nil, raw: RawResponse{RTT: dur(99), ICMPMessage: msg(IPv4ECHOREPLY, 1005), From: net.ParseIP("192.168.0.1")}},
-			1006: {err: nil, raw: RawResponse{RTT: dur(76), ICMPMessage: msg(IPv4ECHOREPLY, 1006), From: net.ParseIP("192.168.0.1")}},
-			1007: {err: nil, raw: RawResponse{RTT: dur(80), ICMPMessage: msg(IPv4ECHOREPLY, 1007), From: net.ParseIP("192.168.0.1")}},
-			1008: {err: nil, raw: RawResponse{RTT: dur(81), ICMPMessage: msg(IPv4ECHOREPLY, 1008), From: net.ParseIP("192.168.0.1")}},
-			1009: {err: nil, raw: RawResponse{RTT: dur(150), ICMPMessage: msg(IPv4ECHOREPLY, 1009), From: net.ParseIP("192.168.0.1")}},
-			1010: {err: nil, raw: RawResponse{RTT: dur(44), ICMPMessage: msg(IPv4ECHOREPLY, 1010), From: net.ParseIP("192.168.0.1")}},
+			1001: {err: nil, raw: RawResponse{RTT: dur(110), ICMPMessage: msg(IPv4ECHOREPLY, 1001), Peer: net.ParseIP("192.168.0.1")}},
+			1002: {err: nil, raw: RawResponse{RTT: dur(80), ICMPMessage: msg(IPv4ECHOREPLY, 1002), Peer: net.ParseIP("192.168.0.1")}},
+			1003: {err: nil, raw: RawResponse{RTT: dur(65), ICMPMessage: msg(IPv4ECHOREPLY, 1003), Peer: net.ParseIP("192.168.0.1")}},
+			1004: {err: nil, raw: RawResponse{RTT: dur(100), ICMPMessage: msg(IPv4ECHOREPLY, 1004), Peer: net.ParseIP("192.168.0.1")}},
+			1005: {err: nil, raw: RawResponse{RTT: dur(99), ICMPMessage: msg(IPv4ECHOREPLY, 1005), Peer: net.ParseIP("192.168.0.1")}},
+			1006: {err: nil, raw: RawResponse{RTT: dur(76), ICMPMessage: msg(IPv4ECHOREPLY, 1006), Peer: net.ParseIP("192.168.0.1")}},
+			1007: {err: nil, raw: RawResponse{RTT: dur(80), ICMPMessage: msg(IPv4ECHOREPLY, 1007), Peer: net.ParseIP("192.168.0.1")}},
+			1008: {err: nil, raw: RawResponse{RTT: dur(81), ICMPMessage: msg(IPv4ECHOREPLY, 1008), Peer: net.ParseIP("192.168.0.1")}},
+			1009: {err: nil, raw: RawResponse{RTT: dur(150), ICMPMessage: msg(IPv4ECHOREPLY, 1009), Peer: net.ParseIP("192.168.0.1")}},
+			1010: {err: nil, raw: RawResponse{RTT: dur(44), ICMPMessage: msg(IPv4ECHOREPLY, 1010), Peer: net.ParseIP("192.168.0.1")}},
 
-			2001: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2001), From: net.ParseIP("192.168.0.2")}},
-			2002: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2002), From: net.ParseIP("192.168.0.2")}},
-			2003: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2003), From: net.ParseIP("192.168.0.2")}},
-			2004: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2004), From: net.ParseIP("192.168.0.2")}},
-			2005: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2005), From: net.ParseIP("192.168.0.2")}},
-			2006: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2006), From: net.ParseIP("192.168.0.2")}},
-			2007: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2007), From: net.ParseIP("192.168.0.2")}},
-			2008: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2008), From: net.ParseIP("192.168.0.2")}},
-			2009: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2009), From: net.ParseIP("192.168.0.2")}},
-			2010: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2010), From: net.ParseIP("192.168.0.2")}},
+			2001: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2001), Peer: net.ParseIP("192.168.0.2")}},
+			2002: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2002), Peer: net.ParseIP("192.168.0.2")}},
+			2003: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2003), Peer: net.ParseIP("192.168.0.2")}},
+			2004: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2004), Peer: net.ParseIP("192.168.0.2")}},
+			2005: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2005), Peer: net.ParseIP("192.168.0.2")}},
+			2006: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2006), Peer: net.ParseIP("192.168.0.2")}},
+			2007: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2007), Peer: net.ParseIP("192.168.0.2")}},
+			2008: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2008), Peer: net.ParseIP("192.168.0.2")}},
+			2009: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2009), Peer: net.ParseIP("192.168.0.2")}},
+			2010: {err: nil, raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 2010), Peer: net.ParseIP("192.168.0.2")}},
 
-			3001: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3001), From: net.ParseIP("192.168.0.3")}},
-			3002: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3002), From: net.ParseIP("192.168.0.3")}},
-			3003: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3003), From: net.ParseIP("192.168.0.3")}},
-			3004: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3004), From: net.ParseIP("192.168.0.3")}},
-			3005: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3005), From: net.ParseIP("192.168.0.3")}},
-			3006: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3006), From: net.ParseIP("192.168.0.3")}},
-			3007: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3007), From: net.ParseIP("192.168.0.3")}},
-			3008: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3008), From: net.ParseIP("192.168.0.3")}},
-			3009: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3009), From: net.ParseIP("192.168.0.3")}},
-			3010: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3010), From: net.ParseIP("192.168.0.3")}},
+			3001: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3001), Peer: net.ParseIP("192.168.0.3")}},
+			3002: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3002), Peer: net.ParseIP("192.168.0.3")}},
+			3003: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3003), Peer: net.ParseIP("192.168.0.3")}},
+			3004: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3004), Peer: net.ParseIP("192.168.0.3")}},
+			3005: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3005), Peer: net.ParseIP("192.168.0.3")}},
+			3006: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3006), Peer: net.ParseIP("192.168.0.3")}},
+			3007: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3007), Peer: net.ParseIP("192.168.0.3")}},
+			3008: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3008), Peer: net.ParseIP("192.168.0.3")}},
+			3009: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3009), Peer: net.ParseIP("192.168.0.3")}},
+			3010: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3010), Peer: net.ParseIP("192.168.0.3")}},
 		},
 	}
 	chkMap := make(map[int]answer)
 	for k, v := range pinger.answers {
 		chkMap[k] = v
 	}
-	g := New(cfg, mockLogger{}, pinger)
+	g := New(cfg, mockLogger{}, pinger, &mockSeqGen{seqmap: make(map[uint64]int)})
 	ping, pong := g.Start()
 
 	go func() {
@@ -226,8 +203,8 @@ func TestGopinger(t *testing.T) {
 				if r.Err == nil {
 					t.Errorf("Error Expected: %v Got: %v", a.err, r.Err)
 				}
-				if (r.ICMPMessage != icmp.Message{}) {
-					t.Errorf("ICMPMessage expected to be zero. Got: %v", r.ICMPMessage)
+				if r.ICMPMessage != nil {
+					t.Errorf("ICMPMessage expected to be nil. Got: %v", r.ICMPMessage)
 				}
 			}
 
