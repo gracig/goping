@@ -91,6 +91,11 @@ type mockPinger struct {
 	answers map[int]answer
 }
 
+func (m *mockPinger) Init() {
+}
+func (m *mockPinger) Close() {
+}
+
 func (m *mockPinger) Ping(r Request, seq int) (future <-chan RawResponse, err error) {
 	f := make(chan RawResponse, 1)
 	future = f

@@ -107,6 +107,8 @@ type Logger interface {
 
 //Pinger is responsible for send and receive pings over the network
 type Pinger interface {
+	Init()
+	Close()
 	Ping(r Request, seq int) (future <-chan RawResponse, err error)
 }
 
@@ -155,6 +157,8 @@ func (g *goping) Start() (chan<- Request, <-chan Response) {
 	doneIn := make(chan struct{})
 	done := make(chan struct{})
 	var wg sync.WaitGroup
+
+	g.pinger.Init()
 
 	go func(in chan Request, out chan Response) {
 		for {
@@ -256,6 +260,7 @@ func (g *goping) Start() (chan<- Request, <-chan Response) {
 				}(&wg, out, done)
 
 			case <-done:
+				g.pinger.Close()
 				return
 			}
 		}
