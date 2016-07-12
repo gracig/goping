@@ -32,7 +32,7 @@ func (l mockLogger) Debug(fmt string, v ...interface{}) {
 
 func TestNewRequest(t *testing.T) {
 	cfg := Config{Count: 1, Interval: time.Duration(1 * time.Second), PacketSize: 56, TOS: 16, TTL: 64, Timeout: (3 * time.Second)}
-	g := New(cfg, &mockLogger{}, &mockPinger{}, &mockSeqGen{})
+	g := New(cfg, &mockLogger{}, &mockPinger{}, &mockSeqGen{seqmap: make(map[uint64]int)})
 
 	for i := 0; i < 100; i++ {
 		req := g.NewRequest("hostname", map[string]string{"id": "1"})
@@ -82,28 +82,38 @@ type mockSeqGen struct {
 	seqmap map[uint64]int
 }
 
-func (m *mockSeqGen) Next(r Request) int {
-	m.seqmap[r.Id]++
-	return m.seqmap[r.Id] + int(r.Id)*1000
+func (m *mockSeqGen) Next(rid uint64) int {
+	m.seqmap[rid]++
+	return m.seqmap[rid] + int(rid)*1000
 }
 
 type mockPinger struct {
 	answers map[int]answer
 }
 
-func (m *mockPinger) Init() {
-}
-func (m *mockPinger) Close() {
-}
-
-func (m *mockPinger) Ping(r Request, seq int) (future <-chan RawResponse, err error) {
-	f := make(chan RawResponse, 1)
-	future = f
-	err = m.answers[seq].err
+func (m *mockPinger) Start(pid int) (ping chan<- SeqRequest, pong <-chan RawResponse) {
+	in, out, doneIn, done := make(chan SeqRequest), make(chan RawResponse), make(chan struct{}, 1), make(chan struct{}, 1)
+	ping, pong = in, out
 
 	go func() {
-		<-time.After(time.Duration(m.answers[seq].raw.RTT))
-		f <- m.answers[seq].raw
+		for {
+			select {
+			case recv, open := <-in:
+				if open {
+					go func() {
+						<-time.After(time.Duration(m.answers[recv.Seq].raw.RTT))
+						out <- m.answers[recv.Seq].raw
+					}()
+				} else {
+					doneIn <- struct{}{}
+					ping = nil
+				}
+			case <-doneIn:
+				done <- struct{}{}
+			case <-done:
+				return
+			}
+		}
 	}()
 
 	return
@@ -193,7 +203,7 @@ func TestGopinger(t *testing.T) {
 
 	for r := range pong {
 		if a, ok := chkMap[r.Seq]; !ok {
-			t.Errorf("Sequence was not found in pinger.answers")
+			t.Errorf("Sequence was not found in pinger.answers [%v]", r.Seq)
 		} else {
 			delete(chkMap, r.Seq)
 
