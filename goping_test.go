@@ -91,9 +91,9 @@ type mockPinger struct {
 	answers map[int]answer
 }
 
-func (m *mockPinger) Start(pid int) (ping chan<- SeqRequest, pong <-chan RawResponse) {
+func (m *mockPinger) Start(pid int) (ping chan<- SeqRequest, pong <-chan RawResponse, donepong <-chan struct{}, err error) {
 	in, out, doneIn, done := make(chan SeqRequest), make(chan RawResponse), make(chan struct{}, 1), make(chan struct{}, 1)
-	ping, pong = in, out
+	ping, pong, donepong = in, out, done
 
 	go func() {
 		for {
@@ -110,7 +110,6 @@ func (m *mockPinger) Start(pid int) (ping chan<- SeqRequest, pong <-chan RawResp
 				}
 			case <-doneIn:
 				done <- struct{}{}
-			case <-done:
 				return
 			}
 		}
@@ -192,7 +191,10 @@ func TestGopinger(t *testing.T) {
 		chkMap[k] = v
 	}
 	g := New(cfg, mockLogger{}, pinger, &mockSeqGen{seqmap: make(map[uint64]int)})
-	ping, pong := g.Start()
+	ping, pong, err := g.Start()
+	if err != nil {
+		t.Errorf("Error not expected")
+	}
 
 	go func() {
 		for i := 0; i < 3; i++ {

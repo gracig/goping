@@ -3,10 +3,10 @@ package lnxICMPv4
 import (
 	"bytes"
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"log"
+	"math"
 	"net"
-	"sync"
 	"syscall"
 	"time"
 
@@ -28,79 +28,40 @@ type ConnManager interface {
 	SendTo(fd int, p []byte, to syscall.Sockaddr) error
 	RecvMsg(fd int, buf []byte) (peer net.IP, when time.Time, err error)
 }
-type seqfut struct {
-	seq int
-	fut chan goping.RawResponse
-}
-type seqresp struct {
-	seq  int
-	resp goping.RawResponse
-}
 
 type pinger struct {
-	sync.Once
-	fd       int
-	chseqfut chan seqfut
-	chseqrep chan seqresp
-	chdone   chan struct{}
-	conn     ConnManager
+	conn ConnManager
 }
 
-func (p *pinger) Ping(r goping.Request, seq int) (future <-chan goping.RawResponse, err error) {
-
-	//Get Future Channel
-	fut := make(chan goping.RawResponse, 1)
-	future = fut
-
-	//Resolve HostName
-	if addr, e := net.ResolveIPAddr("ip4", r.Host); e != nil {
-		err = fmt.Errorf("Could not resolve address: %s", r.Host)
-	} else {
-		_ = addr
-	}
-
-	//Send seq and fut to a channel
-	p.chseqfut <- seqfut{seq: seq, fut: fut}
-
-	return
-}
-
-func (p *pinger) loop() {
-	futures := make([]chan goping.RawResponse, 65536, 65536)
-	for {
-		select {
-		case sf := <-p.chseqfut:
-			futures[sf.seq] = sf.fut
-		case sr := <-p.chseqrep:
-			if futures[sr.seq] != nil {
-				futures[sr.seq] <- sr.resp
-				futures[sr.seq] = nil
-			}
-		case <-p.chdone:
-			return
-		}
-	}
-}
-
-func (p *pinger) Init() {
-
+func (p *pinger) Start(pid int) (chan<- goping.SeqRequest, <-chan goping.RawResponse, <-chan struct{}, error) {
+	in, out, donein, done := make(chan goping.SeqRequest), make(chan goping.RawResponse), make(chan struct{}), make(chan struct{})
 	if fd, err := p.conn.Open(); err != nil {
-		log.Fatalf("Could not open connection: [%v]", err)
+		return nil, nil, nil, err
 	} else {
-		p.fd = fd
+		go p.ping(pid, fd, in, out, donein)
+		go p.pong(pid, fd, out, donein, done)
 	}
-	go p.loop()
-	go p.startListener(p.fd)
 
+	return in, out, done, nil
 }
 
-func (p *pinger) Close() {
-	if err := p.conn.Close(p.fd); err != nil {
-		log.Printf("Error while closing socket: [%v]", err)
-	}
-}
+func (p *pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- goping.RawResponse, done chan<- struct{}) {
 
-func (p *pinger) startListener(fd int) {
+	for r := range in {
+
+		//Resolve HostName
+		if addr, e := net.ResolveIPAddr("ip4", r.Req.Host); e != nil {
+			out <- goping.RawResponse{Seq: r.Seq, Err: errors.New("Could not resolve address"), RTT: math.NaN()}
+
+		} else {
+			_ = addr
+		}
+
+	}
+	done <- struct{}{}
+
+}
+func (p *pinger) pong(gpid int, fd int, out chan<- goping.RawResponse, donein <-chan struct{}, done chan<- struct{}) {
 
 	//Buffer to receive the ping packet
 	buf := make([]byte, 1024)
@@ -134,12 +95,12 @@ func (p *pinger) startListener(fd int) {
 		}
 
 		//Ignores processing if id is different from mypid
-		if pid != g_IDENTIFIER {
+		if pid != gpid {
 			continue
 		}
 
 		//Send the raw response back to channel
-		p.chseqrep <- seqresp{seq, goping.RawResponse{ICMPMessage: buf[:40], Peer: peer, RTT: 0}}
+		out <- goping.RawResponse{Seq: seq, ICMPMessage: buf[:40], Peer: peer, RTT: 0}
 
 	}
 

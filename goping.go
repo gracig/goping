@@ -2,6 +2,7 @@ package goping
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"net"
 	"os"
@@ -114,13 +115,13 @@ type Logger interface {
 
 //Pinger is responsible for send and receive pings over the network
 type Pinger interface {
-	Start(pid int) (chan<- SeqRequest, <-chan RawResponse)
+	Start(pid int) (chan<- SeqRequest, <-chan RawResponse, <-chan struct{}, error)
 }
 
 //GoPing Coordinates ping requests and responses
 type Gopinger interface {
 	NewRequest(hostname string, userData map[string]string) Request
-	Start() (chan<- Request, <-chan Response)
+	Start() (chan<- Request, <-chan Response, error)
 }
 
 //SequenceGenerator returns a sequence number to be used in the ICMP sequence field.
@@ -155,7 +156,7 @@ func (g *goping) NewRequest(hostname string, userData map[string]string) Request
 	}
 }
 
-func (g *goping) Start() (chan<- Request, <-chan Response) {
+func (g *goping) Start() (chan<- Request, <-chan Response, error) {
 	in := make(chan Request)
 	pin := make(chan Request)
 	out := make(chan Response)
@@ -163,9 +164,13 @@ func (g *goping) Start() (chan<- Request, <-chan Response) {
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 
-	go func(in chan Request, out chan Response) {
+	ping, pong, pongdone, err := g.pinger.Start(os.Getpid())
+	if err != nil {
+		return nil, nil, fmt.Errorf("Could not start pinger: [%v]", err)
+	}
+
+	go func(in chan Request, out chan Response, ping chan<- SeqRequest, pong <-chan RawResponse, pongdone <-chan struct{}) {
 		holder := make([]chan RawResponse, 65536, 65536)
-		ping, pong := g.pinger.Start(os.Getpid())
 		for {
 			select {
 
@@ -263,9 +268,9 @@ func (g *goping) Start() (chan<- Request, <-chan Response) {
 			}
 		}
 
-	}(in, out)
+	}(in, out, ping, pong, pongdone)
 
-	return in, out
+	return in, out, nil
 }
 
 /*** Constructors ***/
