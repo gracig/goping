@@ -5,34 +5,14 @@ import (
 	"math"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
-type mockLogger struct {
-	t   *testing.T
-	dbg bool
-}
-
-func (l mockLogger) Warn(fmt string, v ...interface{}) {
-	l.t.Logf(fmt, v...)
-}
-func (l mockLogger) Info(fmt string, v ...interface{}) {
-	l.t.Logf(fmt, v...)
-}
-func (l mockLogger) Severe(fmt string, v ...interface{}) {
-	l.t.Logf(fmt, v...)
-}
-func (l mockLogger) IsDebug() bool {
-	return l.dbg
-}
-func (l mockLogger) Debug(fmt string, v ...interface{}) {
-	l.t.Logf(fmt, v...)
-}
-
 func TestNewRequest(t *testing.T) {
 	cfg := Config{Count: 1, Interval: time.Duration(1 * time.Second), PacketSize: 56, TOS: 16, TTL: 64, Timeout: (3 * time.Second)}
-	g := New(cfg, &mockLogger{}, &mockPinger{}, &mockSeqGen{seqmap: make(map[uint64]int)})
+	g := New(cfg, &mockPinger{}, &mockSeqGen{seqmap: make(map[uint64]int)}, &mockIDGen{})
 
 	for i := 0; i < 100; i++ {
 		req := g.NewRequest("hostname", map[string]string{"id": "1"})
@@ -55,8 +35,8 @@ func TestNewRequest(t *testing.T) {
 			t.Errorf("No match req.Config.Timeout. Expected: [%v], Got: [%v]", cfg.Timeout, req.Config.Timeout)
 		}
 		id := uint64(i + 1)
-		if req.Id != id {
-			t.Errorf("No match req.Id. Expected: [%v], Got: [%v]", id, req.Id)
+		if req.ID != id {
+			t.Errorf("No match req.ID. Expected: [%v], Got: [%v]", id, req.ID)
 		}
 		if req.UserData == nil {
 			t.Errorf("req.UserData was expected to be initialized")
@@ -76,6 +56,13 @@ func TestNewRequest(t *testing.T) {
 type answer struct {
 	err error
 	raw RawResponse
+}
+type mockIDGen struct {
+	status uint64
+}
+
+func (m *mockIDGen) Next() uint64 {
+	return atomic.AddUint64(&(m.status), 1)
 }
 
 type mockSeqGen struct {
@@ -190,7 +177,7 @@ func TestGopinger(t *testing.T) {
 	for k, v := range pinger.answers {
 		chkMap[k] = v
 	}
-	g := New(cfg, mockLogger{}, pinger, &mockSeqGen{seqmap: make(map[uint64]int)})
+	g := New(cfg, pinger, &mockSeqGen{seqmap: make(map[uint64]int)}, &mockIDGen{})
 	ping, pong, err := g.Start()
 	if err != nil {
 		t.Errorf("Error not expected")

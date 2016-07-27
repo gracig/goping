@@ -13,25 +13,15 @@ import (
 )
 
 func init() {
-	goping.RegPingerAdd("linuxICMPv4", new(pinger))
+	goping.RegPingerAdd("linuxICMPv4", &Pinger{sysWrap: new(syscallWrapper)})
 }
 
-//Pinger is responsible for send and receive pings over the network
-//type Pinger interface {
-//	Ping(r Request, seq int) (future <-chan RawResponse,err error)
-//}
-
-type ConnManager interface {
-	Open() (int, error)
-	Close(fd int) error
-	Sendto(fd int, p []byte, flags int, to syscall.Sockaddr) (err error)
-	Recvmsg(fd int, p, oob []byte, flags int) (n, oobn int, recvflags int, from syscall.Sockaddr, err error)
+//Pinger is the type the implements goping.Pinger interface
+type Pinger struct {
+	sysWrap syscallWrapperInterface //The syscall Wrapper object
 }
 
-type pinger struct {
-	conn ConnManager
-}
-
+//Start is the implementation of the method goping.Pinger.Start
 func (p *pinger) Start(pid int) (chan<- goping.SeqRequest, <-chan goping.RawResponse, <-chan struct{}, error) {
 	in, out, donein, done := make(chan goping.SeqRequest), make(chan goping.RawResponse), make(chan struct{}), make(chan struct{})
 	if fd, err := p.conn.Open(); err != nil {
@@ -44,6 +34,63 @@ func (p *pinger) Start(pid int) (chan<- goping.SeqRequest, <-chan goping.RawResp
 	return in, out, done, nil
 }
 
+/*syscallWrapperInterface wraps syscall calls */
+type syscallWrapperInterface interface {
+	Socket(domain, typ, proto int) (fd int, err error)
+	SetsockoptInt(fd, level, opt int, value int) (err error)
+	Sendto(fd int, p []byte, flags int, to syscall.Sockaddr) (err error)
+	Recvmsg(fd int, p, oob []byte, flags int) (n, oobn int, recvflags int, from syscall.Sockaddr, err error)
+	Close(fd int) (err error)
+}
+
+/*syscallWrapper is a type that implements syscallWrapperinterface */
+type syscallWrapper struct{}
+
+func (c syscallWrapper) Socket(domain, typ, proto int) (fd int, err error) {
+	fd, err = syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_ICMP)
+	return
+}
+func (c syscallWrapper) SetsockoptInt(fd, level, opt int, value int) (err error) {
+	err = syscall.SetsockoptInt(fd, level, opt, value)
+	return
+}
+func (c syscallWrapper) Sendto(fd int, p []byte, flags int, to syscall.Sockaddr) (err error) {
+	err = syscall.Sendto(fd, p, flags, to)
+	return
+}
+func (c syscallWrapper) Recvmsg(fd int, p, oob []byte, flags int) (n, oobn int, recvflags int, from syscall.Sockaddr, err error) {
+	n, oobn, recvflags, from, err = syscall.Recvmsg(fd, p, oob, flags)
+	return
+}
+func (c syscallWrapper) Close(fd int) (err error) {
+	err = syscall.Close(fd)
+	return
+}
+
+func (c *connmanager) Open() (int, error) {
+	//Create a raw socket to read icmp packets
+	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_ICMP)
+	if err != nil {
+		return 0, err
+	}
+	//Set the option to receive the kernel timestamp from each received message
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_TIMESTAMP, 1); err != nil {
+		return 0, err
+	}
+	//Increase the socket buffer
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, 1024*1024); err != nil {
+		return 0, err
+	}
+	//Listen on all interfaces
+	var addr syscall.Sockaddr = &syscall.SockaddrInet4{
+		Port: 0,
+		Addr: [4]byte{0, 0, 0, 0},
+	}
+	if err := syscall.Bind(fd, addr); err != nil {
+		return 0, err
+	}
+	return fd, nil
+}
 func (p *pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- goping.RawResponse, done chan<- struct{}) {
 
 	for r := range in {
@@ -127,47 +174,4 @@ func (p *pinger) pong(gpid int, fd int, out chan<- goping.RawResponse, donein <-
 			}
 		}
 	}
-}
-
-/***Conn Manager Implementation ***/
-type connmanager struct{}
-
-func (c *connmanager) Open() (int, error) {
-	//Create a raw socket to read icmp packets
-	fd, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_ICMP)
-	if err != nil {
-		return 0, err
-	}
-
-	//Set the option to receive the kernel timestamp from each received message
-	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_TIMESTAMP, 1); err != nil {
-		return 0, err
-	}
-
-	//Increase the socket buffer
-	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, syscall.SO_RCVBUF, 1024*1024); err != nil {
-		return 0, err
-	}
-
-	//Listen on all interfaces
-	var addr syscall.Sockaddr = &syscall.SockaddrInet4{
-		Port: 0,
-		Addr: [4]byte{0, 0, 0, 0},
-	}
-	if err := syscall.Bind(fd, addr); err != nil {
-		return 0, err
-	}
-	return fd, nil
-
-}
-func (c *connmanager) Close(fd int) error {
-	return syscall.Close(fd)
-}
-
-func (c *connmanager) SendTo(fd int, p []byte, to syscall.Sockaddr) error {
-	return syscall.Sendto(fd, p, 0, to)
-}
-func (c *connmanager) Recvmsg(fd int, p, oob []byte, flags int) (n, oobn int, recvflags int, from syscall.Sockaddr, err error) {
-	n, oobn, recvflags, from, err = syscall.Recvmsg(fd, p, oob, flags)
-	return
 }
