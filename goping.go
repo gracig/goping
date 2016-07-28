@@ -198,12 +198,16 @@ func (g goping) Start() (chan<- Request, <-chan Response, error) {
 				//Starts a goroutine to wait for WaitGroup.
 				go func(wg *sync.WaitGroup, out chan Response, done chan struct{}) {
 					//Wait for all requests be finished including the timeouts
+					fmt.Println("Waiting for responses to finish")
 					wg.Wait()
 					//Signals pinger that no more requests will be sent
+					fmt.Println("Closing ping")
 					close(ping)
+					fmt.Println("Waiting for pongdone")
 					//Waits pinger finish all tasks
 					<-pongdone
 					//Signals user that no more responses will be sent
+					fmt.Println("Closing out")
 					close(out)
 					//Signals function to exit
 					done <- struct{}{}

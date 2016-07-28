@@ -2,6 +2,7 @@ package goping
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"net"
 	"strconv"
@@ -92,10 +93,12 @@ func (m *mockPinger) Start(pid int) (ping chan<- SeqRequest, pong <-chan RawResp
 						out <- m.answers[recv.Seq].raw
 					}()
 				} else {
+					fmt.Println("Sending signal to doneIn")
 					doneIn <- struct{}{}
-					ping = nil
+					in = nil
 				}
 			case <-doneIn:
+				fmt.Println("Pinger signaling that is done")
 				done <- struct{}{}
 				return
 			}
@@ -173,16 +176,23 @@ func TestGopinger(t *testing.T) {
 			3010: {err: errors.New("Address Not Resolved"), raw: RawResponse{RTT: dur(10000), ICMPMessage: msg(IPv4ECHOREPLY, 3010), Peer: net.ParseIP("192.168.0.3")}},
 		},
 	}
+
+	//Create and populate a map of answers indexed by a sequence number
 	chkMap := make(map[int]answer)
 	for k, v := range pinger.answers {
 		chkMap[k] = v
 	}
+
+	//Instantiate a new pinger
 	g := New(cfg, pinger, &mockSeqGen{seqmap: make(map[uint64]int)}, &mockIDGen{})
+
+	//Start the ping engine and get the in and out channels
 	ping, pong, err := g.Start()
 	if err != nil {
 		t.Errorf("Error not expected")
 	}
 
+	//Start a goroutine to send all the requests to the ping channel
 	go func() {
 		for i := 0; i < 3; i++ {
 			ping <- g.NewRequest("hostname"+strconv.Itoa(i+1), map[string]string{"i": strconv.Itoa(i + 1)})
@@ -190,11 +200,13 @@ func TestGopinger(t *testing.T) {
 		close(ping) //<- This should signal to close pong
 	}()
 
+	//Start reading the pong channel
 	for r := range pong {
 		if a, ok := chkMap[r.Seq]; !ok {
 			t.Errorf("Sequence was not found in pinger.answers [%v]", r.Seq)
 		} else {
 			delete(chkMap, r.Seq)
+			fmt.Printf("Received response %v\n", r)
 
 			//Check for timeouts
 			if a.raw.RTT == dur(10000) && a.err == nil {
