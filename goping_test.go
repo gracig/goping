@@ -87,9 +87,11 @@ func (m *mockPinger) Start(pid int) (ping chan<- SeqRequest, pong <-chan RawResp
 			select {
 			case recv, open := <-in:
 				if open {
-					go func() {
-						out <- m.answers[recv.Seq].raw
-					}()
+					if m.answers[recv.Seq].raw.RTT < 1000 {
+						go func() {
+							out <- m.answers[recv.Seq].raw
+						}()
+					}
 				} else {
 					doneIn <- struct{}{}
 					in = nil
@@ -206,7 +208,7 @@ func TestGopinger(t *testing.T) {
 			//Check for timeouts
 			if a.raw.RTT == dur(10000) && a.err == nil {
 				if r.Err != ErrTimeout {
-					t.Errorf("Error Expected: %v Got: %v", ErrTimeout, r.Err)
+					t.Errorf("Error Expected: %v Got: %v for Sequence %v", ErrTimeout, r.Err, r.Seq)
 				}
 			}
 
