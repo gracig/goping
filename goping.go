@@ -122,7 +122,9 @@ func (g goping) Start() (chan<- Request, <-chan Response, error) {
 						doneIn <- struct{}{}
 					}()
 				} else {
+					//incrementing WaitGroup for later synchronization
 					wg.Add(1)
+					//Verifies if we have pings to do for this request based on the Count field
 					if recv.Config.Count == 0 {
 						//Request  Count is 0. Job is done without sending any requests
 						wg.Done()
