@@ -6,6 +6,7 @@ import (
 	"math"
 	"net"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -82,15 +83,19 @@ type mockPinger struct {
 func (m *mockPinger) Start(pid int) (ping chan<- SeqRequest, pong <-chan RawResponse, donepong <-chan struct{}, err error) {
 	in, out, doneIn, done := make(chan SeqRequest), make(chan RawResponse), make(chan struct{}, 1), make(chan struct{}, 1)
 	ping, pong, donepong = in, out, done
+	var wg sync.WaitGroup
 
 	go func() {
 		for {
 			select {
 			case recv, open := <-in:
 				if open {
+					wg.Add(1)
 					go func() {
 						<-time.After(time.Duration(m.answers[recv.Seq].raw.RTT))
+						fmt.Printf("Sending response %v %v\n", m.answers[recv.Seq].raw.Seq, m.answers[recv.Seq].raw.RTT)
 						out <- m.answers[recv.Seq].raw
+						wg.Done()
 					}()
 				} else {
 					fmt.Println("Sending signal to doneIn")
@@ -98,6 +103,8 @@ func (m *mockPinger) Start(pid int) (ping chan<- SeqRequest, pong <-chan RawResp
 					in = nil
 				}
 			case <-doneIn:
+				fmt.Println("Wait mock finish work")
+				wg.Done()
 				fmt.Println("Pinger signaling that is done")
 				done <- struct{}{}
 				return
@@ -202,11 +209,11 @@ func TestGopinger(t *testing.T) {
 
 	//Start reading the pong channel
 	for r := range pong {
+		fmt.Printf("Received response %v %v\n", r.Seq, r.RawResponse.RTT)
 		if a, ok := chkMap[r.Seq]; !ok {
 			t.Errorf("Sequence was not found in pinger.answers [%v]", r.Seq)
 		} else {
 			delete(chkMap, r.Seq)
-			fmt.Printf("Received response %v\n", r)
 
 			//Check for timeouts
 			if a.raw.RTT == dur(10000) && a.err == nil {
