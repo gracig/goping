@@ -10,7 +10,7 @@ import (
 //Pinger is responsible for  the low implementation to send and receive pings over the network
 type Pinger interface {
 	//Start initiate the channels where the pinger will receive requests and should send the responses.
-	Start(pid int) (chan<- SeqRequest, <-chan RawResponse, <-chan struct{}, error)
+	Start(pid int) (ping chan<- SeqRequest, pong <-chan RawResponse, done <-chan struct{}, err error)
 }
 
 /*** Errors ***/
