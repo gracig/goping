@@ -15,17 +15,17 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-func init() {
-	goping.RegPingerAdd("linuxICMPv4", &Pinger{syscall: new(syscallWrapper)})
+func New() goping.Pinger {
+	return &pinger{syscall: new(syscallWrapper)}
 }
 
 //Pinger is the type the implements goping.Pinger interface
-type Pinger struct {
+type pinger struct {
 	syscall syscallWrapperInterface //The syscall Wrapper object
 }
 
 //Start is the implementation of the method goping.Pinger.Start
-func (p Pinger) Start(pid int) (ping chan<- goping.SeqRequest, pong <-chan goping.RawResponse, done <-chan struct{}, err error) {
+func (p pinger) Start(pid int) (ping chan<- goping.SeqRequest, pong <-chan goping.RawResponse, done <-chan struct{}, err error) {
 
 	//Initialize the channels used in the select stage
 	input, output, doneInput, doneOutput := make(chan goping.SeqRequest), make(chan goping.RawResponse), make(chan struct{}), make(chan struct{})
@@ -46,7 +46,7 @@ func (p Pinger) Start(pid int) (ping chan<- goping.SeqRequest, pong <-chan gopin
 }
 
 //Opens a raw socket fd
-func (p Pinger) OpenConn() (int, error) {
+func (p pinger) OpenConn() (int, error) {
 	//Create a raw socket to read icmp packets
 	fd, err := p.syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_ICMP)
 	if err != nil {
@@ -65,6 +65,13 @@ func (p Pinger) OpenConn() (int, error) {
 		return 0, err
 	}
 
+	//Set timeout while reading from socket
+	var tv syscall.Timeval
+	tv.Sec = 1 /* 1 sec timeout */
+	tv.Usec = 0
+	if err := syscall.SetsockoptTimeval(fd, syscall.SOL_SOCKET, syscall.SO_RCVTIMEO, &tv); err != nil {
+		return 0, err
+	}
 	//Listen on all interfaces
 	var addr syscall.Sockaddr = &syscall.SockaddrInet4{
 		Port: 0,
@@ -76,7 +83,7 @@ func (p Pinger) OpenConn() (int, error) {
 	return fd, nil
 }
 
-func (p Pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- goping.RawResponse, done chan<- struct{}) {
+func (p pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- goping.RawResponse, done chan<- struct{}) {
 	var echo icmp.Echo
 	var icmpmsg icmp.Message = icmp.Message{
 		Type: ipv4.ICMPTypeEcho,
@@ -91,7 +98,7 @@ func (p Pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- g
 	var icmpb, ipv4b []byte
 	var buffer bytes.Buffer
 	var tbytes = make([]byte, 1000, 1000)
-	//var tv syscall.Timeval
+	var tv syscall.Timeval
 	for r := range in {
 		//Resolve HostName
 		addr, err := net.ResolveIPAddr("ip4", r.Req.Host)
@@ -99,9 +106,16 @@ func (p Pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- g
 			out <- goping.RawResponse{Seq: r.Seq, Err: errors.New("Could not resolve address"), RTT: math.NaN()}
 			continue
 		}
+		//Create the target address to use in the SendTo socket method
+		ip = addr.IP.To4()
+		var to syscall.SockaddrInet4
+		to.Port = 0
+		to.Addr[0], to.Addr[1], to.Addr[2], to.Addr[3] = ip[0], ip[1], ip[2], ip[3]
+
 		//Built the Data to be send
 		buffer.Reset()
-
+		syscall.Gettimeofday(&tv)
+		binary.Write(&buffer, binary.LittleEndian, &tv)
 		remain := r.Req.Config.PacketSize - buffer.Len()
 		if remain < 0 {
 			remain = 0
@@ -129,22 +143,19 @@ func (p Pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- g
 			out <- goping.RawResponse{Seq: r.Seq, Err: errors.New("Could not marshall IP Header"), RTT: math.NaN()}
 			continue
 		}
-		//Create the target address to use in the SendTo socket method
-		ip = addr.IP.To4()
-		var to syscall.SockaddrInet4
-		to.Port = 0
-		to.Addr[0], to.Addr[1], to.Addr[2], to.Addr[3] = ip[0], ip[1], ip[2], ip[3]
 		//Sending the packet through the network
 		if err = p.syscall.Sendto(fd, append(ipv4b, icmpb...), 0, &to); err != nil {
 			out <- goping.RawResponse{Seq: r.Seq, Err: errors.New("Could not Send Ping over the socket"), RTT: math.NaN()}
 			continue
 		}
+		time.Sleep(time.Duration(1 * time.Nanosecond))
 	}
-	close(done)
-	p.syscall.Close(fd)
+	go func() {
+		done <- struct{}{}
+	}()
 }
 
-func (p Pinger) pong(gpid int, fd int, out chan<- goping.RawResponse, donein <-chan struct{}, done chan<- struct{}) {
+func (p pinger) pong(gpid int, fd int, out chan<- goping.RawResponse, donein <-chan struct{}, done chan<- struct{}) {
 	//Buffer to receive the ping packet
 	buf := make([]byte, 1024)
 	//Buffer to receive the control message
@@ -159,13 +170,17 @@ func (p Pinger) pong(gpid int, fd int, out chan<- goping.RawResponse, donein <-c
 		select {
 		case <-donein:
 			close(done)
-			fmt.Println("PINGER DONE")
+			if err := p.syscall.Close(fd); err != nil {
+				fmt.Printf("Error calling syscall.Close %v\n", err)
+			}
 			return
 		default:
 		}
+
 		//Receives a message from the socket sent by the kernel
 		_, oobn, _, from, err := p.syscall.Recvmsg(fd, buf, oob, 0)
 		if err != nil {
+			//fmt.Printf("Error reading recvmsg %v\n", err)
 			//Error reading packaging
 			continue
 		}
@@ -215,7 +230,7 @@ func (p Pinger) pong(gpid int, fd int, out chan<- goping.RawResponse, donein <-c
 			from.(*syscall.SockaddrInet4).Addr[3],
 		)
 		//GoRoutine that sends the raw response to channel out
-		func(seq int, msg []byte, peer net.IP, rtt float64) {
+		go func(seq int, msg []byte, peer net.IP, rtt float64) {
 			out <- goping.RawResponse{Seq: seq, ICMPMessage: msg, Peer: peer, RTT: rtt}
 		}(seq, buf[:40], peer, 0)
 	}
