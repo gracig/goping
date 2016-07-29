@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/gracig/goping"
@@ -20,11 +21,12 @@ func main() {
 	p := goping.New(cfg, linuxICMPv4.New(), nil, nil)
 	ping, pong, err := p.Start()
 	if err != nil {
-		fmt.Println("Could not start ping")
+		log.Fatal("Could not start pinger!")
+
 	}
 	go func() {
 		for i := 0; i < 1; i++ {
-			ping <- p.NewRequest("8.8.8.8", nil)
+			ping <- p.NewRequest("localhost", nil)
 		}
 		close(ping)
 	}()

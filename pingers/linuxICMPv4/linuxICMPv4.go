@@ -9,6 +9,7 @@ import (
 	"net"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/gracig/goping"
 	"golang.org/x/net/icmp"
@@ -97,7 +98,6 @@ func (p pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- g
 	var ip net.IP
 	var icmpb, ipv4b []byte
 	var buffer bytes.Buffer
-	var tbytes = make([]byte, 1000, 1000)
 	var tv syscall.Timeval
 	for r := range in {
 		//Resolve HostName
@@ -116,11 +116,7 @@ func (p pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- g
 		buffer.Reset()
 		syscall.Gettimeofday(&tv)
 		binary.Write(&buffer, binary.LittleEndian, &tv)
-		remain := r.Req.Config.PacketSize - buffer.Len()
-		if remain < 0 {
-			remain = 0
-		}
-		buffer.Read(tbytes[:remain])
+		fmt.Println(buffer.Bytes())
 		echo.Data = buffer.Bytes()
 		//Get the ICMP echo Identifier
 		echo.ID = gpid
@@ -184,6 +180,8 @@ func (p pinger) pong(gpid int, fd int, out chan<- goping.RawResponse, donein <-c
 			//Error reading packaging
 			continue
 		}
+		var endTime = time.Now()
+
 		//Finds the pid and seq value.
 		var pid, seq int
 		switch buf[20] {
@@ -218,10 +216,19 @@ func (p pinger) pong(gpid int, fd int, out chan<- goping.RawResponse, donein <-c
 				bbuf.Write(m.Data)
 				binary.Read(&bbuf, binary.LittleEndian, &tv)
 				bbuf.Reset()
-				when := time.Unix(tv.Unix())
-				_ = when
+				endTime = time.Unix(tv.Unix())
 			}
 		}
+		tv.Sec = 0
+		tv.Usec = 0
+		tvsz := unsafe.Sizeof(&tv)
+		fmt.Println(tvsz)
+		bbuf.Write(buf[28 : 28+16])
+		binary.Read(&bbuf, binary.LittleEndian, &tv)
+		bbuf.Reset()
+		var startTime = time.Unix(tv.Unix())
+		fmt.Println(startTime, endTime)
+
 		//Get peer address
 		peer := net.IPv4(
 			from.(*syscall.SockaddrInet4).Addr[0],
@@ -232,7 +239,7 @@ func (p pinger) pong(gpid int, fd int, out chan<- goping.RawResponse, donein <-c
 		//GoRoutine that sends the raw response to channel out
 		go func(seq int, msg []byte, peer net.IP, rtt float64) {
 			out <- goping.RawResponse{Seq: seq, ICMPMessage: msg, Peer: peer, RTT: rtt}
-		}(seq, buf[:40], peer, 0)
+		}(seq, buf[:40], peer, float64(endTime.Sub(startTime).Nanoseconds())/1e6)
 	}
 }
 
