@@ -160,41 +160,44 @@ func (g goping) Start() (chan<- Request, <-chan Response, error) {
 				//Stores the channel in a slice indexed by the icmp sequence number
 				holder[sr.Seq] = respchan
 				//Send the request to the Pinger ping channel
-				ping <- sr
-				//Start a goroutinr to wait for the response
-				go func(sr SeqRequest, respchan <-chan RawResponse) {
-					//Schedule the wait interval for the next ping
-					waitInterval := time.After(recv.Config.Interval)
-					//Schedule the timeout while waiting for the response
-					timeout := time.After(recv.Config.Timeout)
-					//Builds the response object
-					resp := Response{
-						Request:     recv,
-						RawResponse: RawResponse{Seq: sr.Seq, RTT: math.NaN()},
-					}
-					//Receive response or timeout
-					select {
-					case <-timeout:
-						//Assign timeout error to response
-						resp.Err = ErrTimeout
-					case r := <-respchan:
-						//Assign RawResponse to Response
-						resp.RawResponse = r
-					}
-					//Send response to out channel. Blocks this function until the client consumes the response
-					//We block because of the synchronization with waitgroup. Otherwise we would write to a closed channel.
-					out <- resp
-					//Verifies if we have more pings to do for this request
-					if recv.Config.Count >= 0 && int(recv.Sent) >= recv.Config.Count {
-						//This was the last last ping for this request. Job Done
-						wg.Done()
-					} else {
-						//We still have more pings to do. Wait for the interval timer before send another request to pin channel
-						<-waitInterval
-						//Send another request to pin
-						pin <- recv
-					}
-				}(sr, respchan)
+				go func() {
+					ping <- sr
+					//Start a goroutinr to wait for the response
+					go func(sr SeqRequest, respchan <-chan RawResponse) {
+						//Schedule the wait interval for the next ping
+						waitInterval := time.After(recv.Config.Interval)
+						//Schedule the timeout while waiting for the response
+						timeout := time.After(recv.Config.Timeout)
+						//Builds the response object
+						resp := Response{
+							Request:     recv,
+							RawResponse: RawResponse{Seq: sr.Seq, RTT: math.NaN()},
+						}
+						//Receive response or timeout
+						select {
+						case <-timeout:
+							//Assign timeout error to response
+							resp.Err = ErrTimeout
+						case r := <-respchan:
+							//Assign RawResponse to Response
+							resp.RawResponse = r
+						}
+						//Send response to out channel. Blocks this function until the client consumes the response
+						//We block because of the synchronization with waitgroup. Otherwise we would write to a closed channel.
+						out <- resp
+						//Verifies if we have more pings to do for this request
+						if recv.Config.Count >= 0 && int(recv.Sent) >= recv.Config.Count {
+							//This was the last last ping for this request. Job Done
+							wg.Done()
+						} else {
+							//We still have more pings to do. Wait for the interval timer before send another request to pin channel
+							<-waitInterval
+							//Send another request to pin
+							pin <- recv
+						}
+					}(sr, respchan)
+
+				}()
 			//Received signal that the "in" channel is closed. No more requests.
 			case <-doneIn:
 				//Starts a goroutine to wait for WaitGroup.

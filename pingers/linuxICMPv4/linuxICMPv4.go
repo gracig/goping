@@ -99,15 +99,28 @@ func (p pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- g
 	var icmpb, ipv4b []byte
 	var buffer bytes.Buffer
 	var tv syscall.Timeval
+
+	var address = make(map[string]net.IP)
+	var addressError = make(map[string]error)
+
 	for r := range in {
 		//Resolve HostName
-		addr, err := net.ResolveIPAddr("ip4", r.Req.Host)
-		if err != nil {
+		var err error
+		if _, ok := address[r.Req.Host]; !ok {
+			addr, err := net.ResolveIPAddr("ip4", r.Req.Host)
+			if err != nil {
+				addressError[r.Req.Host] = err
+				address[r.Req.Host] = net.IPv4(0, 0, 0, 0)
+			} else {
+				address[r.Req.Host] = addr.IP.To4()
+			}
+		}
+		if addressError[r.Req.Host] != nil {
 			out <- goping.RawResponse{Seq: r.Seq, Err: errors.New("Could not resolve address"), RTT: math.NaN()}
 			continue
 		}
 		//Create the target address to use in the SendTo socket method
-		ip = addr.IP.To4()
+		ip = address[r.Req.Host]
 		var to syscall.SockaddrInet4
 		to.Port = 0
 		to.Addr[0], to.Addr[1], to.Addr[2], to.Addr[3] = ip[0], ip[1], ip[2], ip[3]
@@ -116,7 +129,6 @@ func (p pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- g
 		buffer.Reset()
 		syscall.Gettimeofday(&tv)
 		binary.Write(&buffer, binary.LittleEndian, &tv)
-		fmt.Println(buffer.Bytes())
 		echo.Data = buffer.Bytes()
 		//Get the ICMP echo Identifier
 		echo.ID = gpid
@@ -133,7 +145,7 @@ func (p pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- g
 		iph.TOS = int(r.Req.Config.TOS)
 		iph.TotalLen = 20 + len(icmpb) // 20 bytes for IP, len(wb) for ICMP
 		iph.TTL = int(r.Req.Config.TTL)
-		iph.Dst = addr.IP
+		iph.Dst = ip
 		//Pack IP Header
 		if ipv4b, err = iph.Marshal(); err != nil {
 			out <- goping.RawResponse{Seq: r.Seq, Err: errors.New("Could not marshall IP Header"), RTT: math.NaN()}
@@ -222,12 +234,10 @@ func (p pinger) pong(gpid int, fd int, out chan<- goping.RawResponse, donein <-c
 		tv.Sec = 0
 		tv.Usec = 0
 		tvsz := unsafe.Sizeof(&tv)
-		fmt.Println(tvsz)
-		bbuf.Write(buf[28 : 28+16])
+		bbuf.Write(buf[28 : 28+tvsz*2])
 		binary.Read(&bbuf, binary.LittleEndian, &tv)
 		bbuf.Reset()
 		var startTime = time.Unix(tv.Unix())
-		fmt.Println(startTime, endTime)
 
 		//Get peer address
 		peer := net.IPv4(
