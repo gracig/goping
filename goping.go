@@ -61,7 +61,7 @@ type GoPinger interface {
 	//NewRequest creates a new request object. Uses an id generator to populate the Id field
 	NewRequest(hostname string, userData map[string]string) Request
 	//Start initiates the request and response channels to which requests are sent and responses are received
-	Start() (chan<- Request, <-chan Response, error)
+	Start(smoothDuration time.Duration) (chan<- Request, <-chan Response, error)
 }
 
 /*** Interface Implementation ***/
@@ -83,7 +83,10 @@ func (g goping) NewRequest(hostname string, userData map[string]string) Request 
 }
 
 //Start initiates the request and response channels to which requests are sent and responses are received
-func (g goping) Start() (chan<- Request, <-chan Response, error) {
+func (g goping) Start(smoothDuration time.Duration) (chan<- Request, <-chan Response, error) {
+	if smoothDuration <= 0 {
+		return nil, nil, fmt.Errorf("smoothDuration should be greater than 0. Actual value %v", smoothDuration)
+	}
 	//Receives requests from the caller and send to "pin"
 	in := make(chan Request)
 	//Receives requests from "in" or "pin" and send to "pin" or "out"
@@ -107,6 +110,8 @@ func (g goping) Start() (chan<- Request, <-chan Response, error) {
 	go func(in chan Request, out chan Response, ping chan<- SeqRequest, pong <-chan RawResponse, pongdone <-chan struct{}) {
 		//This slice will hold the responses channels of a request.indexed by the icmp sequence number
 		holder := make(map[int]chan RawResponse)
+
+		tick := time.NewTicker(smoothDuration)
 		//The main loop
 		for {
 			//Channel selection
@@ -161,6 +166,8 @@ func (g goping) Start() (chan<- Request, <-chan Response, error) {
 				holder[sr.Seq] = respchan
 				//Send the request to the Pinger ping channel
 				go func() {
+					//Waits for the smooth interval inside the goroutine
+					<-tick.C
 					ping <- sr
 					//Start a goroutinr to wait for the response
 					go func(sr SeqRequest, respchan <-chan RawResponse) {

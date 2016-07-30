@@ -15,9 +15,10 @@ import (
 const ()
 
 var (
-	help  bool
-	hosts []string
-	cfg   = goping.Config{
+	help      bool
+	hosts     []string
+	smoothDur time.Duration = time.Duration(1 * time.Millisecond)
+	cfg                     = goping.Config{
 		Count:      -1,
 		Interval:   time.Duration(1 * time.Second),
 		PacketSize: 100,
@@ -32,12 +33,14 @@ func parseFlags() {
 	flag.BoolVar(&help, "h", false, "Display Help Message")
 	flag.IntVar(&cfg.Count, "count", -1, "The number of pings to send for each host")
 	flag.IntVar(&cfg.Count, "c", -1, "The number of pings to send for each host")
+	flag.DurationVar(&smoothDur, "smoothinterval", time.Duration(1*time.Millisecond), "The minimum interval time between all ping requests")
+	flag.DurationVar(&smoothDur, "s", time.Duration(1*time.Millisecond), "The minimum interval time between all ping requests")
 	flag.DurationVar(&cfg.Interval, "interval", time.Duration(1*time.Second), "The minimum interval time between pings from the same host")
 	flag.DurationVar(&cfg.Interval, "i", time.Duration(1*time.Second), "The minimum interval time between pings from the same host")
 	flag.DurationVar(&cfg.Timeout, "timeout", time.Duration(4*time.Second), "The maximum time to wait for a ping response")
 	flag.DurationVar(&cfg.Timeout, "t", time.Duration(4*time.Second), "The maximum time to wait for a ping response")
-	flag.IntVar(&cfg.PacketSize, "size", 64, "The size of the ICMP Packet in every request")
-	flag.IntVar(&cfg.PacketSize, "s", 64, "The size of the ICMP Packet in every request")
+	flag.IntVar(&cfg.PacketSize, "packetsize", 64, "The size of the ICMP Packet in every request")
+	flag.IntVar(&cfg.PacketSize, "ps", 64, "The size of the ICMP Packet in every request")
 	flag.IntVar(&cfg.TOS, "TOS", 0, "The TOS (Type of Service) field in the ip header")
 	flag.IntVar(&cfg.TTL, "TTL", 64, "The TTL (Time to Live) field in the ip header")
 	flag.Parse()
@@ -54,7 +57,7 @@ func main() {
 
 	gp := goping.New(cfg, linuxICMPv4.New(), nil, nil)
 
-	ping, pong, err := gp.Start()
+	ping, pong, err := gp.Start(smoothDur)
 	if err != nil {
 		log.Fatalf("Could not initialize pinger: %v", err)
 	}

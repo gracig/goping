@@ -156,7 +156,6 @@ func (p pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- g
 			out <- goping.RawResponse{Seq: r.Seq, Err: errors.New("Could not Send Ping over the socket"), RTT: math.NaN()}
 			continue
 		}
-		time.Sleep(time.Duration(1 * time.Nanosecond))
 	}
 	go func() {
 		done <- struct{}{}

@@ -185,9 +185,9 @@ func TestGopinger(t *testing.T) {
 	g := New(cfg, pinger, &mockSeqGen{seqmap: make(map[uint64]int)}, &mockIDGen{})
 
 	//Start the ping engine and get the in and out channels
-	ping, pong, err := g.Start()
+	ping, pong, err := g.Start(time.Duration(1))
 	if err != nil {
-		t.Errorf("Error not expected")
+		t.Fatalf("Error not expected: %v\n", err)
 	}
 
 	//Start a goroutine to send all the requests to the ping channel
