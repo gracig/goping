@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/gracig/goping"
-	"github.com/gracig/goping/pingers/linuxICMPv4"
+	"github.com/gracig/goping/pingers/icmpv4"
 )
 
 func main() {
@@ -18,7 +18,7 @@ func main() {
 		TTL:        64,
 		Timeout:    time.Duration(3 * time.Second),
 	}
-	p := goping.New(cfg, linuxICMPv4.New(), nil, nil)
+	p := goping.New(cfg, icmpv4.New(), nil, nil)
 	ping, pong, err := p.Start()
 	if err != nil {
 		log.Fatal("Could not start pinger!")

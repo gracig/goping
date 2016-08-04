@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gracig/goping"
-	"github.com/gracig/goping/pingers/linuxICMPv4"
+	"github.com/gracig/goping/pingers/icmpv4"
 )
 
 const ()
@@ -55,7 +55,7 @@ func main() {
 
 	parseFlags()
 
-	gp := goping.New(cfg, linuxICMPv4.New(), nil, nil)
+	gp := goping.New(cfg, icmpv4.New(), nil, nil)
 
 	ping, pong, err := gp.Start(smoothDur)
 	if err != nil {

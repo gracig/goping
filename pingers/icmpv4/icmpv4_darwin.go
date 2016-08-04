@@ -1,4 +1,4 @@
-package linuxICMPv4
+package icmpv4
 
 import (
 	"bytes"
@@ -289,3 +289,4 @@ func (c syscallWrapper) Close(fd int) (err error) {
 	err = syscall.Close(fd)
 	return
 }
+
