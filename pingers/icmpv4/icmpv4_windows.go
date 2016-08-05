@@ -26,6 +26,35 @@ type pinger struct {
 
 //Start is the implementation of the method goping.Pinger.Start
 func (p pinger) Start(pid int) (ping chan<- goping.SeqRequest, pong <-chan goping.RawResponse, done <-chan struct{}, err error) {
+	/*
+		// Find all devices
+		devices, err := pcap.FindAllDevs()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Print device information
+		fmt.Println("Devices found:")
+		for _, device := range devices {
+			fmt.Println("\nName: ", device.Name)
+			fmt.Println("Description: ", device.Description)
+			fmt.Println("Devices addresses: ", device.Description)
+			for _, address := range device.Addresses {
+				fmt.Println("- IP address: ", address.IP)
+				fmt.Println("- Subnet mask: ", address.Netmask)
+			}
+		}
+		handle, err := pcap.OpenLive("", 1024, false, 30*time.Second)
+		if err != nil {
+			log.Fatal(err)
+		}
+		packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+		for packet := range packetSource.Packets() {
+			// Process packet here
+			fmt.Println(packet.Metadata().Timestamp, packet)
+		}
+	*/
+
 	//Initialize the channels used in the select stage
 	input, output, doneInput, doneOutput := make(chan goping.SeqRequest), make(chan goping.RawResponse), make(chan struct{}), make(chan struct{})
 	var c net.PacketConn
@@ -39,6 +68,8 @@ func (p pinger) Start(pid int) (ping chan<- goping.SeqRequest, pong <-chan gopin
 	go p.ping(pid, c, input, output, doneInput)
 
 	ping, pong, done = input, output, doneOutput
+
+	//err = errors.New("Not implemented in windows")
 	return
 }
 
@@ -79,8 +110,8 @@ func (p pinger) ping(gpid int, c net.PacketConn, input <-chan goping.SeqRequest,
 		//Built the Data to be send
 		buffer.Reset()
 		nano := time.Now().UnixNano()
-		binary.PutVarint(nanob, nano)
-		echo.Data = nanob
+		sz := binary.PutVarint(nanob, nano)
+		echo.Data = nanob[:sz]
 
 		//Get the ICMP echo Identifier
 		echo.ID = gpid
@@ -124,6 +155,7 @@ func (p pinger) pong(gpid int, c net.PacketConn, output chan<- goping.RawRespons
 		if err != nil {
 			continue
 		}
+		end := time.Now()
 
 		//Finds the pid and seq value.
 		var pid, seq int
@@ -135,18 +167,18 @@ func (p pinger) pong(gpid int, c net.PacketConn, output chan<- goping.RawRespons
 
 			bbuf.Reset()
 			bbuf.Write(buf[8:n])
-
 			if nano, err := binary.ReadVarint(&bbuf); err != nil {
+				continue
 			} else {
-				start.Add(time.Duration(nano))
+				start = time.Unix(0, nano)
 			}
 			if pid != gpid {
 				continue
 			}
-			end := time.Now()
+
 			go func(seq int, msg []byte, peer net.IP, rtt float64) {
 				output <- goping.RawResponse{Seq: seq, ICMPMessage: msg, Peer: peer, RTT: rtt}
-			}(seq, buf[:40], net.ParseIP(peer.String()), float64(end.Sub(start).Nanoseconds())/1e6)
+			}(seq, buf[:40], net.ParseIP(peer.String()), float64(end.Sub(start))/1e6)
 
 		default:
 			//Received an error message
