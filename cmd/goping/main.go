@@ -93,7 +93,7 @@ func main() {
 }
 func printResponse(r goping.Response) {
 
-	var msg = "%-7v %3d bytes from %-15v %-20v icmp_seq=%-5d ttl=%-2d tos=%-2d time(sec)=%-8.3f %-20v\n"
+	var msg = "%-7v %3d bytes from %-15v %-20v icmp_seq=%-5d ttl=%-2d tos=%-2d time=%-8.2f %-20v\n"
 	if r.Err != nil {
 		fmt.Printf(msg,
 			"FAILURE",
