@@ -91,9 +91,8 @@ func (p pinger) ping(gpid int, c net.PacketConn, input <-chan goping.SeqRequest,
 		//Resolve HostName
 		var err error
 		if _, ok := address[r.Req.Host]; !ok {
-			addr, err := net.ResolveIPAddr("ip4", r.Req.Host)
-			if err != nil {
-				addressError[r.Req.Host] = err
+			if addr, lerr = net.ResolveIPAddr("ip4", r.Req.Host); lerr != nil {
+				addressError[r.Req.Host] = lerr
 				address[r.Req.Host] = nil
 			} else {
 				address[r.Req.Host] = addr
