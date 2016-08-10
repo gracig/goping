@@ -22,7 +22,7 @@ The principal points were:
 
 Basic Library Usage:
 
-`
+<pre>
 package main
 import (
 	"fmt"
@@ -57,10 +57,20 @@ func main() {
 		fmt.Printf("Received response %v\n", resp)
 	}
 }
+</pre>
+
+
+Known Issues: 
+
 icmpv4_linux.go and icmpv4_darwin.go:
+
 	-Need implement packetsize correctly. Now only the timestamp are being sent through the Data package.
+
 	-Need implement ICMP Response Error message
+
 	-Need implement a better RawMessage response.
+
 icmpv4_windows.go
-	-RTT time is not accurate as linux and darwinf pingers because windows does not implement the SO_TIMESTAMP flag. anyone has a suggestion?
-`
+
+	-RTT time is not accurate as linux and darwinf pingers because windows does not implement the SO_TIMESTAMP flag. anyone has a 
+	suggestion?
