@@ -36,9 +36,9 @@ func main() {
 	cfg := goping.Config{
 		Count:      10,                             //a negative number will ping forever
 		Interval:   time.Duration(1 * time.Second), //The interval between a host ping
-		PacketSize: 100,                            //The packet size. It is nos implemented correctly yet. Now only local time are being send in the ping packet
-		TOS:        0,                              //Type Of Sevice being passed. Only for linux and mac
-		TTL:        64,                             //Time-To-Live, Only for Linux and Mac
+		PacketSize: 100,                            //The packet size. Should be implemented in the pinger
+		TOS:        0,                              //Type Of Sevice being passed. Should be implemented in the pinger
+		TTL:        64,                             //Time-To-Live, Should be implemented in the pinger
 		Timeout:    time.Duration(3 * time.Second), //The max time to wait for an answer
 	}
 	p := goping.New(cfg, icmpv4.New(), nil, nil)  //Creates a new instance. Injecting the Pinger icmpv4. Using defaults for last two parameters.
