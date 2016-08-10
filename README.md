@@ -9,25 +9,29 @@ Please fell free to fix or contribute to the code. I was developing this alone, 
 This is my first opensource project and my first attempt in Go. I studied the language specification, read lots of blogs, made several experimentations and tried to put what I have learned in this project.
 
 The principal points were:
+
 	1) The code use the concept of Dependency Injection, We can inject other pings without interfere in the main logic.
+	
 	2) The core library were tested using mocks (Because of the use of interfaces
+	
 	3) gofmt goimports golint goracle were applied in the source code
+	
 	4) Using channels is pretty cool, but is hard to find the "perfect" way. I think I find a good way to use channels in this library. But, well, It always exist a better way :-).
+	
 	5) Make example applications to exercise the use of the library. Those are at tne cmd directory.
 
 Basic Library Usage:
-package main
 
+`
+package main
 import (
 	"fmt"
 	"log"
 	"strconv"
 	"time"
-
 	"github.com/gracig/goping"
 	"github.com/gracig/goping/pingers/icmpv4"
 )
-
 func main() {
 	cfg := goping.Config{
 		Count:      10,                             //a negative number will ping forever
@@ -37,11 +41,8 @@ func main() {
 		TTL:        64,                             //Time-To-Live, Only for Linux and Mac
 		Timeout:    time.Duration(3 * time.Second), //The max time to wait for an answer
 	}
-	
 	p := goping.New(cfg, icmpv4.New(), nil, nil)  //Creates a new instance. Injecting the Pinger icmpv4. Using defaults for last two parameters.
-	
 	ping, pong, err := p.Start(time.Duration(1 * time.Millisecond)) //Initiates a session. ping and pong are two channels.
-	
 	if err != nil {
 		log.Fatal("Could not start pinger!")
 
@@ -56,10 +57,10 @@ func main() {
 		fmt.Printf("Received response %v\n", resp)
 	}
 }
-
 icmpv4_linux.go and icmpv4_darwin.go:
 	-Need implement packetsize correctly. Now only the timestamp are being sent through the Data package.
 	-Need implement ICMP Response Error message
 	-Need implement a better RawMessage response.
 icmpv4_windows.go
 	-RTT time is not accurate as linux and darwinf pingers because windows does not implement the SO_TIMESTAMP flag. anyone has a suggestion?
+`
