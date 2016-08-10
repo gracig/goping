@@ -8,17 +8,17 @@ Please fell free to fix or contribute to the code. I was developing this alone, 
 
 This is my first opensource project and my first attempt in Go. I studied the language specification, read lots of blogs, made several experimentations and tried to put what I have learned in this project.
 
-The principal points were:
+The principal points about this code:
 
-	1) The code use the concept of Dependency Injection, We can inject other pings without interfere in the main logic.
+	- The code use the concept of Dependency Injection, We can inject other pings without interfere in the main logic.
 	
-	2) The core library were tested using mocks (Because of the use of interfaces
+	- The core library were tested using mocks (Because of the use of interfaces
 	
-	3) gofmt goimports golint goracle were applied in the source code
+	- gofmt goimports golint goracle were applied in the source code
 	
-	4) Using channels is pretty cool, but is hard to find the "perfect" way. I think I find a good way to use channels in this library. But, well, It always exist a better way :-).
+	- Using channels is pretty cool, but is hard to find the "perfect" way. I think I find a good way to use channels in this library. But, well, It always exist a better way :-).
 	
-	5) Make example applications to exercise the use of the library. Those are at tne cmd directory.
+	- Make example applications to exercise the use of the library. Those are at tne cmd directory.
 
 Basic Library Usage:
 
@@ -49,7 +49,9 @@ func main() {
 	}
 	go func() {
 		for i := 0; i < 10; i++ { //Sending 10 jobs
-			ping <- p.NewRequest("localhost", map[string]string{"job": strconv.Itoa(i)}) //Send ping requests to channel ping
+			//Send ping requests to channel ping
+			//A map with attributes can be passed in order to track the response if necessary.
+			ping <- p.NewRequest("localhost", map[string]string{"job": strconv.Itoa(i)}) 
 		}
 		close(ping) //It  is very important to close the ping session after finishing sending ping, otherwise the program blocks.
 	}()
