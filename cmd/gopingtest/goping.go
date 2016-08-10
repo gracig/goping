@@ -19,7 +19,7 @@ func main() {
 		Timeout:    time.Duration(3 * time.Second),
 	}
 	p := goping.New(cfg, icmpv4.New(), nil, nil)
-	ping, pong, err := p.Start()
+	ping, pong, err := p.Start(time.Duration(1 * time.Millisecond))
 	if err != nil {
 		log.Fatal("Could not start pinger!")
 
