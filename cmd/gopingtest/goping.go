@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/gracig/goping"
@@ -11,12 +12,12 @@ import (
 
 func main() {
 	cfg := goping.Config{
-		Count:      -1,
-		Interval:   time.Duration(1 * time.Second),
-		PacketSize: 100,
-		TOS:        0,
-		TTL:        64,
-		Timeout:    time.Duration(3 * time.Second),
+		Count:      10,                             //a negative number will ping forever
+		Interval:   time.Duration(1 * time.Second), //The interval between a host ping
+		PacketSize: 100,                            //The packet size. It is nos implemented correctly yet. Now only local time are being send in the ping packet
+		TOS:        0,                              //Type Of Sevice being passed. Only for linux and mac
+		TTL:        64,                             //Time-To-Live, Only for Linux and Mac
+		Timeout:    time.Duration(3 * time.Second), //The max time to wait for an answer
 	}
 	p := goping.New(cfg, icmpv4.New(), nil, nil)
 	ping, pong, err := p.Start(time.Duration(1 * time.Millisecond))
@@ -25,8 +26,8 @@ func main() {
 
 	}
 	go func() {
-		for i := 0; i < 1; i++ {
-			ping <- p.NewRequest("localhost", nil)
+		for i := 0; i < 10; i++ { //Sending 10 jobs
+			ping <- p.NewRequest("localhost", map[string]string{"job": strconv.Itoa(i)})
 		}
 		close(ping)
 	}()
