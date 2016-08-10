@@ -1,13 +1,19 @@
 
 
 # goping
-Library to ping multiple hosts at once using go language
-It works ok on Linux and Darwin because the elapsed time is retrieved the SO_TIMESTAMP flag and this flag is not implemented on windows.
-The elapsed time on Windows is retrieved after retrieve the packet. May have a delay if too many pings are occuring at the same time.
 
-An example program exists at github.com/gracig/goping/cmd/gopingtest
+Library to ping multiple hosts at once using go language in a controlled way. the interval between pings can be specified in nanosecond precision, but a good number would be 10 msec, with this interval one can send 100 pings/sec.
 
-A command line program that mimics the ping utility exists at github.com/gracig/goping/cmd/goping
+Please fell free to fix or contribute to the code. I was developing this alone, but life is very busy, and if anyone can contribute I would be grateful. This contribution may be done in build new kind of ping implementations or aprimorate the icmpv4 already here.
+
+This is my first opensource project and my first attempt in Go. I studied the language specification, read lots of blogs, made several experimentations and tried to put what I have learned in this project.
+
+The principal points were:
+	1) The code use the concept of Dependency Injection, We can inject other pings without interfere in the main logic.
+	2) The core library were tested using mocks (Because of the use of interfaces
+	3) gofmt goimports golint goracle were applied in the source code
+	4) Using channels is pretty cool, but is hard to find the "perfect" way. I think I find a good way to use channels in this library. But, well, It always exist a better way :-).
+	5) Make example applications to exercise the use of the library. Those are at tne cmd directory.
 
 Basic Library Usage:
 package main
@@ -50,3 +56,10 @@ func main() {
 		fmt.Printf("Received response %v\n", resp)
 	}
 }
+
+icmpv4_linux.go and icmpv4_darwin.go:
+	-Need implement packetsize correctly. Now only the timestamp are being sent through the Data package.
+	-Need implement ICMP Response Error message
+	-Need implement a better RawMessage response.
+icmpv4_windows.go
+	-RTT time is not accurate as linux and darwinf pingers because windows does not implement the SO_TIMESTAMP flag. anyone has a suggestion?
