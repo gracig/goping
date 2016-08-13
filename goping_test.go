@@ -108,9 +108,8 @@ func (m *mockPinger) Start(pid int) (ping chan<- SeqRequest, pong <-chan RawResp
 func dur(i int) float64 {
 	if i < 0 {
 		return math.NaN()
-	} else {
-		return float64(i)
 	}
+	return float64(i)
 }
 
 const (

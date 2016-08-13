@@ -110,7 +110,7 @@ func (g goping) Start(smoothDuration time.Duration) (chan<- Request, <-chan Resp
 	go func(in chan Request, out chan Response, ping chan<- SeqRequest, pong <-chan RawResponse, pongdone <-chan struct{}) {
 		//This slice will hold the responses channels of a request.indexed by the icmp sequence number
 		holder := make(map[int]chan RawResponse)
-
+		//Create the time slots between ping requests
 		tick := time.NewTicker(smoothDuration)
 		//The main loop
 		for {

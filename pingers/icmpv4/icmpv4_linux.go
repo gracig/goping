@@ -16,6 +16,7 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+//New returns a new Pinger
 func New() goping.Pinger {
 	return &pinger{syscall: new(syscallWrapper)}
 }
@@ -32,14 +33,17 @@ func (p pinger) Start(pid int) (ping chan<- goping.SeqRequest, pong <-chan gopin
 	input, output, doneInput, doneOutput := make(chan goping.SeqRequest), make(chan goping.RawResponse), make(chan struct{}), make(chan struct{})
 
 	//Opens the connection
-	if fd, err := p.OpenConn(); err != nil {
+	if fd, lerr := p.OpenConn(); lerr != nil {
 		//Returns error that connection could not be opened
-		return nil, nil, nil, fmt.Errorf("Connection could not be opened: %v", err)
+		err = fmt.Errorf("Connection could not be opened: %v", lerr)
 	} else {
 		//Start Sending ICMPRequests to the File Descriptor
 		go p.ping(pid, fd, input, output, doneInput)
 		//Start receiving ICMPReplies from the File Descriptor
 		go p.pong(pid, fd, output, doneInput, doneOutput)
+	}
+	if err != nil {
+		return
 	}
 
 	ping, pong, done = input, output, doneOutput
@@ -86,11 +90,11 @@ func (p pinger) OpenConn() (int, error) {
 
 func (p pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- goping.RawResponse, done chan<- struct{}) {
 	var echo icmp.Echo
-	var icmpmsg icmp.Message = icmp.Message{
+	var icmpmsg = icmp.Message{
 		Type: ipv4.ICMPTypeEcho,
 		Code: 0,
 	}
-	var iph ipv4.Header = ipv4.Header{
+	var iph = ipv4.Header{
 		Version:  4,
 		Len:      20,
 		Protocol: 1, // ICMP
@@ -107,7 +111,7 @@ func (p pinger) ping(gpid int, fd int, in <-chan goping.SeqRequest, out chan<- g
 		//Resolve HostName
 		var err error
 		if _, ok := address[r.Req.Host]; !ok {
-			if addr, lerr = net.ResolveIPAddr("ip4", r.Req.Host); lerr != nil {
+			if addr, lerr := net.ResolveIPAddr("ip4", r.Req.Host); lerr != nil {
 				addressError[r.Req.Host] = lerr
 				address[r.Req.Host] = net.IPv4(0, 0, 0, 0)
 			} else {
