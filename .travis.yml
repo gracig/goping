@@ -1,31 +1,11 @@
-{
-  "services": [
-    "docker"
-  ],
-  "sudo": true,
-  "install": [
-    "docker login -e=\"$DOCKER_EMAIL\" -u=\"$DOCKER_USERNAME\" -p=\"$DOCKER_PASSWORD\"",
-    "make build"
-  ],
-  "script": [
-    "make test"
-  ],
-  "after_success": [
-    "make push"
-  ],
-  "before_deploy": [
-    "make release",
-    "mv Dockerfile Dockerfile.test",
-    "cp -f Dockerfile.release Dockerfile",
-    "ls release/*",
-    "docker build -t gersongraciani/goping:${TRAVIS_TAG} .",
-    "docker push gersongraciani/goping:${TRAVIS_TAG}",
-    "docker build -t gersongraciani/goping:latest .",
-    "docker push gersongraciani/goping:latest",
-    "mv Dockerfile.test Dockerfile"
-  ],
-  "language": "ruby",
-  "group": "stable",
-  "dist": "trusty",
-  "os": "linux"
-}
+language: go
+go:
+  - 1.7
+
+services:
+  - docker
+sudo: true
+install:
+ - go get ./...
+ - go test -v ./...
+ - go build ./...
